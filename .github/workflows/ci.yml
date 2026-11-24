@@ -111,6 +111,17 @@ jobs:
             exit 1
           fi
 
+  mcp:
+    name: mcp
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --extra mcp
+      - run: |
+          uv run python -c "from janus.mcp.server import build_server; from janus.memory.store import JanusStore; build_server(JanusStore(':memory:')); print('mcp ok')"
+
   types:
     name: typecheck
     runs-on: ubuntu-latest
@@ -124,7 +135,7 @@ jobs:
   tests-ok:
     name: tests-ok
     if: always()
-    needs: [lint, test, coverage, schema, build, dsh, identity, types]
+    needs: [lint, test, coverage, schema, build, dsh, mcp, identity, types]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -136,8 +147,9 @@ jobs:
           SCHEMA: ${{ needs.schema.result }}
           BUILD: ${{ needs.build.result }}
           DSH: ${{ needs.dsh.result }}
+          MCP: ${{ needs.mcp.result }}
           IDENTITY: ${{ needs.identity.result }}
           TYPES: ${{ needs.types.result }}
         run: |
-          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH identity=$IDENTITY types=$TYPES"
-          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$IDENTITY" = success ] && [ "$TYPES" = success ]
+          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH mcp=$MCP identity=$IDENTITY types=$TYPES"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$MCP" = success ] && [ "$IDENTITY" = success ] && [ "$TYPES" = success ]

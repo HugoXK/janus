@@ -9,8 +9,10 @@ criteria.
 
 **Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, JAN-005, JAN-007,
 JAN-008, JAN-009, JAN-010, JAN-015, JAN-016, JAN-019, JAN-023, JAN-024, JAN-025,
-JAN-027, JAN-028, JAN-033, JAN-034, JAN-035, JAN-037, JAN-049, and JAN-050 are
-implemented. See `schemas/janus.schema.json`, `tests/test_contracts.py`,
+JAN-027, JAN-028, JAN-033, JAN-034, JAN-035, JAN-037, JAN-040, JAN-041,
+JAN-045, JAN-046, JAN-047, JAN-048, JAN-049, and JAN-050 are implemented.
+JAN-042 has the command/panel descriptors; DSH UI wiring and cron are deferred
+to v0.2. See `schemas/janus.schema.json`, `tests/test_contracts.py`,
 `tests/test_migrations.py`, `tests/test_config.py`,
 `tests/test_asof_hypothesis.py`, `tests/test_tiingo.py`,
 `tests/test_sec_edgar.py`, `tests/test_entities.py`, `tests/test_provenance.py`,
@@ -18,7 +20,8 @@ implemented. See `schemas/janus.schema.json`, `tests/test_contracts.py`,
 `tests/test_regime.py`, `tests/test_sector.py`, `tests/test_features.py`,
 `tests/test_dashboards.py`, `tests/test_baseline_model.py`,
 `tests/test_calibration_service.py`, `tests/test_settlement.py`,
-`tests/test_debrief.py`, `tests/test_persona_weighting.py`, and
+`tests/test_debrief.py`, `tests/test_persona_weighting.py`,
+`tests/test_mcp_service.py`, `tests/test_beliefbench.py`, and
 `tests/test_copy.py`.
 
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
