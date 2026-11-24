@@ -291,6 +291,8 @@ examples/        offline demo entry point
 
 ## Roadmap
 
+The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md).
+
 - [x] Repository scaffold
 - [x] Point-in-time store and as-of queries
 - [x] Technical indicator engine
