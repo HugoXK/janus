@@ -1,0 +1,15 @@
+{
+  "name": "@hugoxk/janus-dsh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH plugin for Janus — market panels, commands, and cron hooks.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
