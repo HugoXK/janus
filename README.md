@@ -133,6 +133,8 @@ No performance claims yet. The scaffold proves the invariants:
 | Settlement resolves direction and prevents double settlement | `tests/test_settlement.py` |
 | Debrief attribution sums to one | `tests/test_debrief.py` |
 | Persona weighting changes evidence ranking | `tests/test_persona_weighting.py` |
+| MCP service round-trip | `tests/test_mcp_service.py` |
+| BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -150,7 +152,8 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 | **Analysis** | RSI/MACD/ATR/Bollinger/OBV, breadth, regime, sector RRG, feature store, dashboard contracts | DSH panels and the full UI |
 | **Review** | Debrief and attribution baseline | Counterfactual replay |
 | **Taste** | 10-question profile, master priors, persona-conditioned evidence ranking | Persona evolution |
-| **Interface** | CLI, demo, MCP skeleton | DSH panels, cron, approvals |
+| **Interface** | CLI, MCP server, DSH plugin panel/command descriptors | DSH UI wiring, approvals, cron |
+| **Evaluation** | BeliefBench schema/runner, metrics, baselines | More benchmarks and live tasks |
 | **Data** | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, cache, blob store | GDELT, RSS |
 
 ## How it works
@@ -343,12 +346,15 @@ release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 - [x] Offline demo and tests
 - [ ] GDELT event ingestion
 - [ ] RSS / IR ingestion
-- [ ] DSH panels for market / sector / stock dashboards
+- [ ] DSH UI wiring for market / sector / stock dashboards
 - [ ] Full forecast engine and scenario trees
 - [x] Thesis tracker and debrief baseline
 - [ ] Counterfactual replay
-- [ ] DSH plugin panels, commands, and cron
-- [ ] BeliefBench: lookahead-free evaluation
+- [x] MCP server v1
+- [x] DSH plugin panel and command descriptors
+- [ ] DSH UI wiring and cron
+- [x] BeliefBench: lookahead-free evaluation
+- [x] Evaluation metrics and baselines
 - [ ] V1.1: options / sentiment features, AgentDescent persona evolution
 - [ ] V1.2: multi-market, portfolio construction, collaboration
 

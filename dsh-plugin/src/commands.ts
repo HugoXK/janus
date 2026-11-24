@@ -10,3 +10,14 @@ export const commandHelp: Record<JanusCommand, string> = {
   "janus.review": "Debrief a prediction: attribution and calibration.",
   "janus.persona": "Switch or compare an investment taste profile.",
 };
+
+export const commandTools: Record<JanusCommand, string> = {
+  "janus.brief": "janus_calibrate",
+  "janus.market": "janus_as_of_query",
+  "janus.sector": "janus_as_of_query",
+  "janus.stock": "janus_as_of_query",
+  "janus.forecast": "janus_forecast_create",
+  "janus.thesis": "janus_thesis_create",
+  "janus.review": "janus_review_debrief",
+  "janus.persona": "janus_persona_list",
+};
