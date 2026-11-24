@@ -6,6 +6,10 @@ from datetime import datetime
 from ..memory.models import Observation
 
 
+class DataUnavailable(RuntimeError):
+    """Raised when a source is unconfigured, rate-limited, or unreachable."""
+
+
 class DataSource(ABC):
     """A pluggable market data adapter.
 

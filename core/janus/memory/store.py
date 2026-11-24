@@ -50,8 +50,8 @@ class JanusStore:
             """
             INSERT OR REPLACE INTO observation
             (id, entity_id, kind, source, published_at, observed_at, valid_from,
-             valid_to, value, unit, confidence, raw_hash, raw_uri)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             valid_to, value, unit, confidence, raw_hash, raw_uri, snapshot_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 observation.id,
@@ -67,6 +67,7 @@ class JanusStore:
                 observation.confidence,
                 observation.raw_hash,
                 observation.raw_uri,
+                observation.snapshot_id,
             ),
         )
         self._conn.commit()
@@ -76,17 +77,31 @@ class JanusStore:
         entity_id: str,
         as_of: datetime,
         kind: Optional[ObservationKind] = None,
+        *,
+        mode: str = "published",
+        snapshot_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
     ) -> list[Observation]:
-        """Return observations that were published and valid at ``as_of``.
+        """Return observations that were knowable at ``as_of``.
 
-        This is the core anti-lookahead query. Future observations are never
-        returned, even if they are already in the local database.
+        ``mode="published"`` answers "what could the world have known?".
+        ``mode="observed"`` answers "what had this system actually ingested?".
+        The validity window is respected in both modes.
         """
 
-        sql = """
+        if mode not in {"published", "observed"}:
+            raise ValueError("mode must be 'published' or 'observed'")
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if offset < 0:
+            raise ValueError("offset must be >= 0")
+
+        time_column = "published_at" if mode == "published" else "observed_at"
+        sql = f"""
             SELECT * FROM observation
             WHERE entity_id = ?
-              AND published_at <= ?
+              AND {time_column} <= ?
               AND (valid_from IS NULL OR valid_from <= ?)
               AND (valid_to IS NULL OR valid_to > ?)
         """
@@ -95,7 +110,12 @@ class JanusStore:
         if kind is not None:
             sql += " AND kind = ?"
             params.append(kind.value)
-        sql += " ORDER BY published_at ASC, id ASC"
+        if snapshot_id is not None:
+            sql += " AND snapshot_id = ?"
+            params.append(snapshot_id)
+        sql += f" ORDER BY {time_column} ASC, id ASC"
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([limit if limit is not None else -1, offset])
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_observation(row) for row in rows]
 
@@ -115,6 +135,7 @@ class JanusStore:
             confidence=row["confidence"],
             raw_hash=row["raw_hash"],
             raw_uri=row["raw_uri"],
+            snapshot_id=row["snapshot_id"],
         )
 
     # ------------------------------------------------------------------

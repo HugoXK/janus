@@ -54,17 +54,33 @@ A debrief: attribution weights, calibration, and lessons.
 
 ## As-of semantics
 
+There are two questions, and two modes:
+
+| Mode | Question | Time column |
+| --- | --- | --- |
+| `published` | What could the world have known? | `published_at <= as_of` |
+| `observed` | What had this system actually ingested? | `observed_at <= as_of` |
+
+Both modes respect the fact's validity window:
+
 ```sql
 SELECT * FROM observation
 WHERE entity_id = ?
-  AND published_at <= :as_of
+  AND <time_column> <= :as_of
   AND (valid_from IS NULL OR valid_from <= :as_of)
   AND (valid_to IS NULL OR valid_to > :as_of)
-ORDER BY published_at ASC;
+  AND (:snapshot_id IS NULL OR snapshot_id = :snapshot_id)
+ORDER BY <time_column> ASC, id ASC
+LIMIT :limit OFFSET :offset;
 ```
 
 Future rows may exist in the database; they are simply excluded. `test_asof.py`
-is the guardrail.
+is the guardrail, and `test_asof_hypothesis.py` generates adversarial windows.
+
+The `observed` mode is intentionally different: it can include a row whose
+publication timestamp is in the future if the system ingested it early. That is
+a data-quality anomaly, not a license to use future knowledge; the published
+mode remains the default.
 
 ## Immutability
 

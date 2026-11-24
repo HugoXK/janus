@@ -6,21 +6,6 @@ from ..memory.models import Observation
 from .base import DataSource
 
 
-class TiingoSource(DataSource):
-    """Tiingo EOD prices and news.
-
-    Env: ``TIINGO_API_KEY``. The free tier is rate-limited; cache aggressively.
-    """
-
-    name = "tiingo"
-
-    def __init__(self, api_key: str | None = None) -> None:
-        self.api_key = api_key
-
-    def fetch(self, entity_id: str, start: datetime, end: datetime) -> list[Observation]:
-        raise NotImplementedError("Tiingo adapter lands in week 1")
-
-
 class YFinanceSource(DataSource):
     """Unofficial Yahoo Finance access via ``yfinance``.
 
@@ -31,23 +16,7 @@ class YFinanceSource(DataSource):
     name = "yfinance"
 
     def fetch(self, entity_id: str, start: datetime, end: datetime) -> list[Observation]:
-        raise NotImplementedError("yfinance adapter lands in week 1")
-
-
-class SECEdgarSource(DataSource):
-    """SEC EDGAR filings and XBRL facts.
-
-    No key required. Set a descriptive ``User-Agent`` and respect the 10 req/s
-    limit. This is the authoritative source for filings and as-filed facts.
-    """
-
-    name = "sec_edgar"
-
-    def __init__(self, user_agent: str | None = None) -> None:
-        self.user_agent = user_agent
-
-    def fetch(self, entity_id: str, start: datetime, end: datetime) -> list[Observation]:
-        raise NotImplementedError("SEC EDGAR adapter lands in week 1")
+        raise NotImplementedError("yfinance adapter lands in M1")
 
 
 class FREDSource(DataSource):
@@ -63,7 +32,7 @@ class FREDSource(DataSource):
         self.api_key = api_key
 
     def fetch(self, entity_id: str, start: datetime, end: datetime) -> list[Observation]:
-        raise NotImplementedError("FRED adapter lands in week 1")
+        raise NotImplementedError("FRED adapter lands in M1")
 
 
 class GDELTSource(DataSource):
@@ -76,7 +45,7 @@ class GDELTSource(DataSource):
     name = "gdelt"
 
     def fetch(self, entity_id: str, start: datetime, end: datetime) -> list[Observation]:
-        raise NotImplementedError("GDELT adapter lands in week 1")
+        raise NotImplementedError("GDELT adapter lands in M1")
 
 
 class RSSSource(DataSource):
@@ -92,4 +61,4 @@ class RSSSource(DataSource):
         self.feeds = feeds or []
 
     def fetch(self, entity_id: str, start: datetime, end: datetime) -> list[Observation]:
-        raise NotImplementedError("RSS adapter lands in week 1")
+        raise NotImplementedError("RSS adapter lands in M1")

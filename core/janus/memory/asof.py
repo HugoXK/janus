@@ -12,6 +12,11 @@ def observations_as_of(
     entity_id: str,
     as_of: datetime,
     kind: Optional[ObservationKind] = None,
+    *,
+    mode: str = "published",
+    snapshot_id: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: int = 0,
 ) -> list[Observation]:
     """Return only what was knowable at ``as_of``.
 
@@ -19,7 +24,15 @@ def observations_as_of(
     unrestricted ``SELECT *`` when building a historical view.
     """
 
-    return store.query_observations_as_of(entity_id=entity_id, as_of=as_of, kind=kind)
+    return store.query_observations_as_of(
+        entity_id=entity_id,
+        as_of=as_of,
+        kind=kind,
+        mode=mode,
+        snapshot_id=snapshot_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def assert_no_lookahead(observations: list[Observation], as_of: datetime) -> None:

@@ -17,6 +17,8 @@ def _obs(
     value: float = 100.0,
     valid_from: datetime | None = None,
     valid_to: datetime | None = None,
+    observed_at: datetime | None = None,
+    snapshot_id: str | None = None,
 ) -> Observation:
     return Observation(
         id=obs_id,
@@ -24,11 +26,12 @@ def _obs(
         kind=ObservationKind.price,
         source="test",
         published_at=published_at,
-        observed_at=published_at,
+        observed_at=observed_at or published_at,
         valid_from=valid_from,
         valid_to=valid_to,
         value={"close": value},
         raw_hash=obs_id,
+        snapshot_id=snapshot_id,
     )
 
 
@@ -67,6 +70,58 @@ def test_wrapper_uses_as_of_query() -> None:
     rows = observations_as_of(store, "ACME", as_of)
 
     assert [row.id for row in rows] == ["past"]
+
+
+def test_observed_mode_uses_ingest_time() -> None:
+    store = JanusStore(":memory:")
+    as_of = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    store.insert_observation(
+        _obs(
+            "late-published",
+            as_of + timedelta(days=1),
+            observed_at=as_of - timedelta(days=1),
+        )
+    )
+
+    assert store.query_observations_as_of("ACME", as_of) == []
+    observed = store.query_observations_as_of("ACME", as_of, mode="observed")
+    assert [row.id for row in observed] == ["late-published"]
+
+
+def test_snapshot_filter() -> None:
+    store = JanusStore(":memory:")
+    as_of = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    store.insert_observation(_obs("snap-1", as_of - timedelta(days=1), snapshot_id="s1"))
+    store.insert_observation(_obs("snap-2", as_of - timedelta(days=1), snapshot_id="s2"))
+
+    rows = store.query_observations_as_of("ACME", as_of, snapshot_id="s1")
+
+    assert [row.id for row in rows] == ["snap-1"]
+
+
+def test_pagination_is_stable() -> None:
+    store = JanusStore(":memory:")
+    as_of = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    store.insert_observation(_obs("b", as_of))
+    store.insert_observation(_obs("a", as_of))
+
+    first = store.query_observations_as_of("ACME", as_of, limit=1, offset=0)
+    second = store.query_observations_as_of("ACME", as_of, limit=1, offset=1)
+
+    assert [row.id for row in first] == ["a"]
+    assert [row.id for row in second] == ["b"]
+
+
+def test_invalid_mode_and_pagination_are_rejected() -> None:
+    store = JanusStore(":memory:")
+    as_of = datetime(2026, 1, 10, tzinfo=timezone.utc)
+
+    with pytest.raises(ValueError, match="mode"):
+        store.query_observations_as_of("ACME", as_of, mode="future")
+    with pytest.raises(ValueError, match="limit"):
+        store.query_observations_as_of("ACME", as_of, limit=-1)
+    with pytest.raises(ValueError, match="offset"):
+        store.query_observations_as_of("ACME", as_of, offset=-1)
 
 
 def test_randomized_as_of_invariant() -> None:
