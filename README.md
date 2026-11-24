@@ -128,6 +128,11 @@ No performance claims yet. The scaffold proves the invariants:
 | Breadth, regime, and sector rotation are deterministic | `tests/test_breadth.py`, `tests/test_regime.py`, `tests/test_sector.py` |
 | Features are point-in-time and hash-addressed | `tests/test_features.py` |
 | Dashboard contracts validate | `tests/test_dashboards.py` |
+| Baseline logistic model and model card | `tests/test_baseline_model.py` |
+| Calibration service (Platt / isotonic) | `tests/test_calibration_service.py` |
+| Settlement resolves direction and prevents double settlement | `tests/test_settlement.py` |
+| Debrief attribution sums to one | `tests/test_debrief.py` |
+| Persona weighting changes evidence ranking | `tests/test_persona_weighting.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -141,10 +146,10 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 | Area | Now | Next |
 | --- | --- | --- |
 | **Memory** | Bitemporal store, published/observed modes, snapshots, entity graph, provenance | Dedup, retention, snapshot export |
-| **Foresight** | Prediction ledger, calibration, baseline forecaster | Feature store, probabilistic models, scenarios |
+| **Foresight** | Prediction ledger, baseline logistic model, calibration service, settlement | Quantiles, scenarios, model registry |
 | **Analysis** | RSI/MACD/ATR/Bollinger/OBV, breadth, regime, sector RRG, feature store, dashboard contracts | DSH panels and the full UI |
-| **Review** | Debrief API, attribution helper | Attribution engine, counterfactual replay |
-| **Taste** | 10-question profile, master priors | Persona-conditioned retrieval, evolution |
+| **Review** | Debrief and attribution baseline | Counterfactual replay |
+| **Taste** | 10-question profile, master priors, persona-conditioned evidence ranking | Persona evolution |
 | **Interface** | CLI, demo, MCP skeleton | DSH panels, cron, approvals |
 | **Data** | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, cache, blob store | GDELT, RSS |
 
@@ -329,13 +334,19 @@ release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 - [x] Point-in-time feature store
 - [x] Market / sector / stock dashboard contracts
 - [x] Prediction ledger and calibration primitives
+- [x] Baseline direction model
+- [x] Calibration service (Platt / isotonic)
+- [x] Forecast settlement and outcome resolver
+- [x] Debrief and attribution baseline
+- [x] Persona-conditioned evidence weighting
 - [x] Persona profile and master priors
 - [x] Offline demo and tests
 - [ ] GDELT event ingestion
 - [ ] RSS / IR ingestion
 - [ ] DSH panels for market / sector / stock dashboards
 - [ ] Full forecast engine and scenario trees
-- [ ] Thesis tracker and review / debrief
+- [x] Thesis tracker and debrief baseline
+- [ ] Counterfactual replay
 - [ ] DSH plugin panels, commands, and cron
 - [ ] BeliefBench: lookahead-free evaluation
 - [ ] V1.1: options / sentiment features, AgentDescent persona evolution

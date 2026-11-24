@@ -1,7 +1,8 @@
 # v0.1.0 release plan
 
-**Status:** PR #1 (data foundation) merged. PR #2 (analysis, feature store,
-dashboard contracts) is in review.
+**Status:** PR #1 (data foundation) and PR #2 (analysis, feature store,
+dashboard contracts) are merged. PR #3 (forecast, calibration, review, persona)
+is in review.
 
 ## Goal
 
