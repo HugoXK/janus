@@ -9,6 +9,10 @@ from ..memory.store import JanusStore
 from .features import features_hash
 
 
+class FeatureConflict(ValueError):
+    """Raised when a historical feature materialization would be rewritten."""
+
+
 def _normalize_as_of(as_of: datetime) -> str:
     if as_of.tzinfo is None or as_of.tzinfo.utcoffset(as_of) is None:
         raise ValueError("as_of must be timezone-aware")
@@ -34,9 +38,24 @@ class FeatureStore:
         *,
         version: str = "v1",
         source_hash: str = "",
+        allow_revision: bool = False,
     ) -> str:
         stamp = _normalize_as_of(as_of)
         digest = features_hash(features)
+        existing = self.store.connection.execute(
+            """
+            SELECT DISTINCT features_hash FROM feature_value
+            WHERE entity_id = ? AND as_of = ? AND version = ?
+            """,
+            (entity_id, stamp, version),
+        ).fetchall()
+        hashes = {row["features_hash"] for row in existing}
+        if hashes and hashes != {digest} and not allow_revision:
+            raise FeatureConflict(
+                f"features for {entity_id} at {stamp} ({version}) already exist "
+                "with a different hash; use a new version or allow_revision=True"
+            )
+
         computed_at = utcnow().isoformat()
         rows = [
             (

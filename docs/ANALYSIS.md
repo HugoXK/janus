@@ -34,6 +34,9 @@ feature_store.history("AAPL", "rsi_14")
 - `get` returns the latest materialization at or before the requested time.
 - `features_hash` is a SHA-256 of the canonical JSON feature vector.
 - `source_hash` links the vector to the input snapshot.
+- Re-materializing the same `(entity_id, as_of, version)` with a different hash
+  raises `FeatureConflict`. A real revision must use a new version or pass
+  `allow_revision=True` explicitly.
 
 ## Dashboard contracts
 

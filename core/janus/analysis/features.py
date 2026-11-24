@@ -91,6 +91,7 @@ def compute_features(
         else pd.Series(0.0, index=close.index)
     )
 
+    last_close = _finite(close.iloc[-1], 0.0)
     macd_frame = macd(close)
     bands = bollinger(close)
     mid = _finite(bands["mid"].iloc[-1], 0.0) if len(bands) else 0.0
@@ -99,17 +100,16 @@ def compute_features(
         if mid
         else 0.0
     )
+    atr_value = _last(atr(high, low, close, 14), 0.0)
 
     features: dict[str, Any] = {
-        "close": _finite(close.iloc[-1]),
+        "close": last_close,
         "return_1d": _finite(close.pct_change().iloc[-1]) if len(close) >= 2 else 0.0,
         "return_5d": _finite(close.pct_change(5).iloc[-1]) if len(close) >= 6 else 0.0,
         "return_21d": _finite(close.pct_change(21).iloc[-1]) if len(close) >= 22 else 0.0,
         "rsi_14": _last(rsi(close, 14), 50.0),
         "macd_hist": _last(macd_frame["hist"], 0.0),
-        "atr_14_pct": (
-            _last(atr(high, low, close, 14), 0.0) / _finite(close.iloc[-1], 1.0)
-        ),
+        "atr_14_pct": (atr_value / last_close) if last_close else 0.0,
         "bb_width_20": _finite(width),
         "obv_slope_20": (
             _finite(obv(close, volume).diff(20).iloc[-1]) if len(close) >= 21 else 0.0

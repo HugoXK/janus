@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from janus.analysis.feature_store import FeatureStore
+from janus.analysis.feature_store import FeatureConflict, FeatureStore
 from janus.analysis.features import compute_features, features_hash
 from janus.memory.store import JanusStore
 
@@ -57,6 +57,27 @@ def test_future_prices_do_not_change_an_as_of_feature() -> None:
     after_spike = compute_features(spiked, as_of=as_of)
 
     assert baseline["close"] == after_spike["close"]
+
+
+def test_zero_price_does_not_raise() -> None:
+    prices = _prices()
+    prices.loc[prices.index[-1], "close"] = 0.0
+    features = compute_features(prices)
+    assert features["atr_14_pct"] == 0.0
+
+
+def test_feature_store_rejects_rewriting_history() -> None:
+    store = JanusStore(":memory:")
+    feature_store = FeatureStore(store)
+    as_of = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    feature_store.materialize("ACME", as_of, {"close": 100.0})
+    with pytest.raises(FeatureConflict):
+        feature_store.materialize("ACME", as_of, {"close": 101.0})
+    assert feature_store.get("ACME", as_of)["close"] == 100.0
+
+    feature_store.materialize("ACME", as_of, {"close": 101.0}, allow_revision=True)
+    assert feature_store.get("ACME", as_of)["close"] == 101.0
 
 
 def test_features_hash_changes_with_values() -> None:
