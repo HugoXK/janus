@@ -1,7 +1,7 @@
 [project]
 name = "janus-market"
 version = "0.1.0"
-description = "Janus — a two-faced market agent: remembers backward, reasons forward."
+description = "Janus — a market agent with memory and foresight: look back to reason forward."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
