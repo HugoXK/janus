@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ..eval.baselines import ConstantBaseline, RandomBaseline
@@ -33,8 +34,11 @@ def _dump(model: Any) -> dict[str, Any]:
 class JanusService:
     """The transport-independent surface behind MCP and the CLI."""
 
-    def __init__(self, store: JanusStore) -> None:
+    def __init__(
+        self, store: JanusStore, scenarios_root: Optional[Path] = None
+    ) -> None:
         self.store = store
+        self.scenarios_root = scenarios_root
 
     def as_of_query(
         self,
@@ -165,7 +169,12 @@ class JanusService:
     def beliefbench(
         self, scenarios_path: str, baseline: str = "always_up"
     ) -> dict[str, Any]:
-        bench = BeliefBench.load(scenarios_path)
+        path = Path(scenarios_path).resolve()
+        if self.scenarios_root is not None:
+            root = self.scenarios_root.resolve()
+            if path != root and root not in path.parents:
+                raise ValueError("scenario path is outside the configured root")
+        bench = BeliefBench.load(path)
         runner: Callable[[Scenario], ScenarioResult]
         if baseline == "always_up":
             runner = ConstantBaseline(1.0)

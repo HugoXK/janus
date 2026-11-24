@@ -37,6 +37,9 @@ The default store is the configured SQLite database. Tests inject
 | `janus://theses` | All theses |
 | `janus://forecasts` | All forecasts |
 | `janus://calibration` | Calibration report |
+| `janus://market` | Market dashboard placeholder (`not_materialized`) |
+| `janus://sector` | Sector dashboard placeholder (`not_materialized`) |
+| `janus://stock` | Stock dashboard placeholder (`not_materialized`) |
 
 ## Notes
 
@@ -44,5 +47,7 @@ The default store is the configured SQLite database. Tests inject
 - `janus_forecast_settle` expects target `direction` or `up`; the probability is
   P(up).
 - The MCP dependency is optional; the core library and CLI do not need it.
+- `janus_beliefbench_run` is restricted to the server's `scenarios_root`
+  (default: the working directory).
 - The DSH plugin is a thin shell over this surface; it does not reimplement
   memory or calibration.

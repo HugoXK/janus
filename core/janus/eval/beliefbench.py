@@ -186,7 +186,10 @@ class BeliefBench:
     @classmethod
     def load(cls, path: str | Path) -> "BeliefBench":
         payload = json.loads(Path(path).read_text())
-        return cls([Scenario.from_dict(item) for item in payload.get("scenarios", [])])
+        bench = cls()
+        for item in payload.get("scenarios", []):
+            bench.add(Scenario.from_dict(item))
+        return bench
 
     def save(self, path: str | Path) -> Path:
         target = Path(path)

@@ -5,8 +5,20 @@ export type ToolCaller = (
   args: Record<string, unknown>,
 ) => Promise<unknown>;
 
+export type ResourceReader = (uri: string) => Promise<unknown>;
+
 export class JanusClient {
-  constructor(private readonly callTool: ToolCaller) {}
+  constructor(
+    private readonly callTool: ToolCaller,
+    private readonly readResource?: ResourceReader,
+  ) {}
+
+  getResource<T>(uri: string): Promise<T> {
+    if (!this.readResource) {
+      throw new Error("resource reader is not configured");
+    }
+    return this.readResource(uri) as Promise<T>;
+  }
 
   asOfQuery(
     entityId: string,

@@ -1,5 +1,5 @@
 export { JanusClient } from "./client.js";
-export type { ToolCaller } from "./client.js";
+export type { ResourceReader, ToolCaller } from "./client.js";
 export type {
   Forecast,
   MarketDashboard,
@@ -10,6 +10,8 @@ export type {
 } from "./contracts.js";
 export { commandHelp, commandTools } from "./commands.js";
 export { panels } from "./panels.js";
+
+import { panels as panelDescriptors } from "./panels.js";
 
 export const pluginName = "janus";
 export const pluginVersion = "0.1.0";
@@ -49,7 +51,7 @@ export function createJanusPlugin(options: JanusPluginOptions = {}) {
       storePath: options.storePath,
     },
     commands,
-    panels: ["market", "sector", "stock", "thesis", "calibration"],
+    panels: panelDescriptors.map((panel) => panel.id),
   };
 }
 

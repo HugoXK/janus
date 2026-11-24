@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -75,6 +76,17 @@ def test_save_and_load(tmp_path) -> None:
 
     assert [scenario.id for scenario in loaded.scenarios] == ["a", "b", "c"]
     assert loaded.scenarios[0].tags == ("tech",)
+
+
+def test_load_rejects_duplicate_ids(tmp_path) -> None:
+    scenario = _scenario("dup", 1.0)
+    path = tmp_path / "duplicate.json"
+    path.write_text(
+        json.dumps({"scenarios": [scenario.to_dict(), scenario.to_dict()]})
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        BeliefBench.load(path)
 
 
 def test_baselines_are_reproducible() -> None:

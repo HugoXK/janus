@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Optional
 
 from ..config import load_settings
@@ -8,6 +9,7 @@ from ..memory.store import JanusStore
 from .service import JanusService
 
 TOOLS = [
+    "janus_version",
     "janus_as_of_query",
     "janus_thesis_create",
     "janus_thesis_list",
@@ -21,7 +23,10 @@ TOOLS = [
 ]
 
 
-def build_server(store: Optional[JanusStore] = None) -> Any:
+def build_server(
+    store: Optional[JanusStore] = None,
+    scenarios_root: Optional[Path] = None,
+) -> Any:
     """Build the MCP server.
 
     The MCP dependency is optional (``uv sync --extra mcp``). Keeping the import
@@ -35,7 +40,10 @@ def build_server(store: Optional[JanusStore] = None) -> Any:
             "MCP support is optional. Install it with: uv sync --extra mcp"
         ) from exc
 
-    service = JanusService(store or JanusStore(load_settings().database))
+    service = JanusService(
+        store or JanusStore(load_settings().database),
+        scenarios_root=scenarios_root or Path.cwd(),
+    )
     server = FastMCP("janus")
 
     @server.tool()
@@ -176,6 +184,36 @@ def build_server(store: Optional[JanusStore] = None) -> Any:
     @server.resource("janus://calibration")
     def calibration_resource() -> str:
         return json.dumps(service.calibrate(), default=str)
+
+    @server.resource("janus://market")
+    def market_resource() -> str:
+        return json.dumps(
+            {
+                "status": "not_materialized",
+                "panel": "market",
+                "hint": "materialize features and build the market dashboard",
+            }
+        )
+
+    @server.resource("janus://sector")
+    def sector_resource() -> str:
+        return json.dumps(
+            {
+                "status": "not_materialized",
+                "panel": "sector",
+                "hint": "materialize sector features and build the sector dashboard",
+            }
+        )
+
+    @server.resource("janus://stock")
+    def stock_resource() -> str:
+        return json.dumps(
+            {
+                "status": "not_materialized",
+                "panel": "stock",
+                "hint": "materialize stock features and build the stock dashboard",
+            }
+        )
 
     return server
 

@@ -10,19 +10,19 @@ export const panels: Panel[] = [
     id: "market",
     title: "Market",
     description: "Indices, breadth, volatility, liquidity, macro, regime.",
-    resource: "janus://calibration",
+    resource: "janus://market",
   },
   {
     id: "sector",
     title: "Sector",
     description: "Relative rotation, momentum, breadth, revisions, flows.",
-    resource: "janus://forecasts",
+    resource: "janus://sector",
   },
   {
     id: "stock",
     title: "Stock",
     description: "Trend, momentum, volatility, volume, fundamentals, events.",
-    resource: "janus://theses",
+    resource: "janus://stock",
   },
   {
     id: "thesis",

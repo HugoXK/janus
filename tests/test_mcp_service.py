@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from janus.eval.beliefbench import BeliefBench, Scenario
 from janus.mcp.service import JanusService
 from janus.memory.models import Observation, ObservationKind
@@ -74,7 +76,7 @@ def test_as_of_query_and_thesis_forecast_flow() -> None:
 
 
 def test_beliefbench_tool(tmp_path) -> None:
-    service = _service()
+    service = JanusService(JanusStore(":memory:"), scenarios_root=tmp_path)
     bench = BeliefBench(
         [
             Scenario(
@@ -93,3 +95,12 @@ def test_beliefbench_tool(tmp_path) -> None:
 
     assert report["n"] == 1
     assert report["directional_accuracy"] == 1.0
+
+
+def test_beliefbench_rejects_paths_outside_root(tmp_path) -> None:
+    service = JanusService(
+        JanusStore(":memory:"), scenarios_root=tmp_path / "scenarios"
+    )
+
+    with pytest.raises(ValueError, match="outside"):
+        service.beliefbench(str(tmp_path / "other" / "bench.json"))
