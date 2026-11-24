@@ -52,9 +52,10 @@ A forecast that is accurate but overconfident is not a good forecast.
 
 `LogisticDirectionModel` is a dependency-free logistic regression over
 `rsi_14`, `trend`, and `breadth`. Features are standardized before fitting, the
-model carries a `ModelCard`, and `to_dict` / `from_dict` make a run
-reproducible. It is a baseline, not a trading strategy; there are no transaction
-costs and no claim of alpha.
+model carries a `ModelCard`, and `to_dict` / `from_dict` include the
+hyperparameters as well as the coefficients so a run is reproducible. It is a
+baseline, not a trading strategy; there are no transaction costs and no claim of
+alpha.
 
 ## Calibration service
 
@@ -63,14 +64,17 @@ costs and no claim of alpha.
 - Brier, log loss, ECE, and a reliability curve;
 - slices by regime, horizon, and persona when metadata is supplied;
 - `from_store` over settled predictions, so the report is built from the ledger.
+  It reads the horizon and the thesis's persona id; pass `regime_resolver` to
+  add regime slices, or call `report` with explicit metadata.
 
 ## Settlement
 
 `SettlementService` resolves a prediction through a resolver and writes the
 outcome through the append-only ledger. The first resolver is
 `DirectionOutcomeResolver`: it labels `up` / `down` / `flat` from a start/end
-price pair and scores a P(up) forecast as 1 for `up`, 0 otherwise. A settled
-prediction cannot be settled twice.
+price pair and scores a P(up) forecast as 1 for `up`, 0 otherwise. It rejects a
+prediction whose target is not `direction` or `up`, so the P(up) convention is
+explicit. A settled prediction cannot be settled twice.
 
 ## Debrief and persona weighting
 

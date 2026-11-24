@@ -65,7 +65,11 @@ def test_report_from_store() -> None:
     store = JanusStore(":memory:")
     as_of = datetime(2026, 1, 1, tzinfo=timezone.utc)
     thesis = ThesisTracker(store).create(
-        entity_id="ACME", statement="...", horizon="1M", as_of=as_of
+        entity_id="ACME",
+        statement="...",
+        horizon="1M",
+        as_of=as_of,
+        persona_id="buffett",
     )
     ledger = PredictionLedger(store)
     prediction = ledger.record(
@@ -85,7 +89,11 @@ def test_report_from_store() -> None:
         score=1.0,
     )
 
-    report = CalibrationService.from_store(store)
+    report = CalibrationService.from_store(
+        store, regime_resolver=lambda prediction: "risk-on"
+    )
 
     assert report.n == 1
     assert report.by_horizon["1M"]["n"] == 1.0
+    assert report.by_persona["buffett"]["n"] == 1.0
+    assert report.by_regime["risk-on"]["n"] == 1.0

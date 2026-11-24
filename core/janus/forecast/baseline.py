@@ -105,6 +105,9 @@ class LogisticDirectionModel:
             "coef": self.coef_.tolist(),
             "mean": self.mean_.tolist(),
             "std": self.std_.tolist(),
+            "l2": self.l2,
+            "learning_rate": self.learning_rate,
+            "epochs": self.epochs,
             "card": {
                 "name": self.card.name,
                 "version": self.card.version,
@@ -120,6 +123,9 @@ class LogisticDirectionModel:
         model.coef_ = np.asarray(payload["coef"], dtype=float)
         model.mean_ = np.asarray(payload["mean"], dtype=float)
         model.std_ = np.asarray(payload["std"], dtype=float)
+        model.l2 = float(payload.get("l2", 0.01))
+        model.learning_rate = float(payload.get("learning_rate", 0.1))
+        model.epochs = int(payload.get("epochs", 500))
         card = payload["card"]
         model.card = ModelCard(
             name=card["name"],

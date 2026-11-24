@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
@@ -184,7 +184,12 @@ class CalibrationService:
         )
 
     @classmethod
-    def from_store(cls, store: Any) -> CalibrationReport:
+    def from_store(
+        cls,
+        store: Any,
+        *,
+        regime_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    ) -> CalibrationReport:
         probabilities: list[float] = []
         outcomes: list[float] = []
         metadata: list[dict[str, Any]] = []
@@ -193,7 +198,17 @@ class CalibrationService:
                 continue
             probabilities.append(float(prediction.probability))
             outcomes.append(float(outcome.score))
-            metadata.append({"horizon": prediction.horizon, "target": prediction.target})
+            thesis = store.get_thesis(prediction.thesis_id)
+            persona = thesis.persona_id if thesis is not None else None
+            regime = regime_resolver(prediction) if regime_resolver is not None else None
+            metadata.append(
+                {
+                    "horizon": prediction.horizon,
+                    "target": prediction.target,
+                    "persona": persona,
+                    "regime": regime,
+                }
+            )
         return cls().report(probabilities, outcomes, metadata)
 
     @staticmethod

@@ -36,7 +36,10 @@ class DirectionOutcomeResolver:
         source: str,
         realized_at: datetime,
     ) -> dict[str, Any]:
-        del prediction
+        if prediction.target not in {"direction", "up"}:
+            raise ValueError(
+                "DirectionOutcomeResolver expects target 'direction' or 'up' (P(up))"
+            )
         direction = direction_label(start_price, end_price, self.flat_threshold)
         score = 1.0 if direction == "up" else 0.0
         return {

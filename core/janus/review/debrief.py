@@ -57,10 +57,13 @@ class AttributionEngine:
         features: dict[str, float],
         regime: Optional[str] = None,
     ) -> dict[str, float]:
+        trend = features.get("trend")
+        if trend is None:
+            trend = features.get("return_21d", 0.0)
         technical = (
             abs(features.get("rsi_14", 50.0) - 50.0) / 50.0
             + abs(features.get("macd_hist", 0.0))
-            + abs(features.get("trend", 0.0))
+            + abs(float(trend))
         )
         fundamental = abs(features.get("valuation", 0.0)) + abs(
             features.get("quality", 0.0)
