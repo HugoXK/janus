@@ -109,7 +109,20 @@ class Migration:
 
 MIGRATIONS: list[Migration] = [
     Migration(version=1, name="initial", sql=INITIAL_SCHEMA),
+    Migration(
+        version=2,
+        name="observation_snapshot",
+        sql="""
+        ALTER TABLE observation ADD COLUMN snapshot_id TEXT;
+        CREATE INDEX IF NOT EXISTS idx_observation_entity_observed
+            ON observation(entity_id, observed_at);
+        CREATE INDEX IF NOT EXISTS idx_observation_snapshot
+            ON observation(snapshot_id);
+        """,
+    ),
 ]
+
+LATEST_VERSION = max(migration.version for migration in MIGRATIONS)
 
 
 def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
@@ -182,5 +195,5 @@ def migrate(
 def migration_status(connection: sqlite3.Connection) -> dict[str, Optional[object]]:
     return {
         "current": current_version(connection),
-        "latest": max(migration.version for migration in MIGRATIONS),
+        "latest": LATEST_VERSION,
     }

@@ -1,0 +1,34 @@
+{
+  "cik": 320193,
+  "entityName": "Apple Inc.",
+  "facts": {
+    "us-gaap": {
+      "RevenueFromContractWithCustomerExcludingAssessedTax": {
+        "units": {
+          "USD": [
+            {
+              "end": "2025-09-27",
+              "val": 100.0,
+              "fy": 2025,
+              "fp": "FY",
+              "form": "10-K",
+              "filed": "2025-10-31",
+              "accn": "0000320193-25-000123",
+              "frame": "CY2025"
+            },
+            {
+              "end": "2025-09-27",
+              "val": 101.0,
+              "fy": 2025,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-02-01",
+              "accn": "0000320193-26-000099",
+              "frame": "CY2025"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

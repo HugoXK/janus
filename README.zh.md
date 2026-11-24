@@ -64,7 +64,10 @@ Janus 是罗马神话里的门神、过渡之神、开端与终结之神，**Jan
 | 迁移确定、可重复执行 | `tests/test_migrations.py`、`janus migrate` |
 | 配置优先级与 doctor 有测试 | `tests/test_config.py`、`janus config doctor` |
 | 未来数据永远不会进入 as-of 视图 | `tests/test_asof.py` |
+| published / observed 两种模式、快照、分页 | `tests/test_asof.py` |
 | as-of 性质在生成输入下成立 | `tests/test_asof_hypothesis.py` |
+| Tiingo 复权字段正确，重复摄入幂等 | `tests/test_tiingo.py` |
+| SEC 重述不会覆盖 as-filed 事实 | `tests/test_sec_edgar.py` |
 | 预测不可变，只能结算一次 | `tests/test_ledger.py` |
 | RSI 有界；MACD / Bollinger / OBV 行为正确 | `tests/test_indicators.py` |
 | 离线闭环不需要付费 API，且输出匹配 golden file | `tests/test_demo_golden.py` |
@@ -75,13 +78,13 @@ Demo 会展示：20 条可见观察、排除一条未来数据、计算 RSI、�
 
 | 模块 | 现在 | 下一步 |
 | --- | --- | --- |
-| **Memory** | bitemporal 存储、as-of 查询、provenance、不可变预测 | 实体图、去重、数据摄入 |
+| **Memory** | bitemporal 存储、published/observed 模式、快照、provenance | 实体图、去重、数据摄入 |
 | **Foresight** | 预测账本、校准、baseline | 特征库、概率模型、情景树 |
 | **Analysis** | RSI、MACD、ATR、Bollinger、OBV、相对强度、宽度 | 大盘 / 行业 / 个股看板 |
 | **Review** | debrief API、归因辅助 | 归因引擎、反事实重放 |
 | **Taste** | 10 题 profile、大师先验 | 人设条件检索、进化 |
 | **Interface** | CLI、demo、MCP 骨架 | DSH 面板、cron、审批 |
-| **Data** | 适配器契约 | Tiingo、yfinance、SEC、FRED / ALFRED、GDELT、RSS |
+| **Data** | Tiingo EOD、SEC EDGAR、HTTP cache、blob store | yfinance、FRED / ALFRED、GDELT、RSS |
 
 ## 它是怎么工作的
 
@@ -234,11 +237,17 @@ examples/        离线 demo 入口
 - [x] 配置加载与 `janus config doctor`
 - [x] Golden demo 与 property-based as-of 测试
 - [x] point-in-time 存储与 as-of 查询
+- [x] published / observed 查询模式、快照、分页
+- [x] Tiingo EOD 适配器
+- [x] SEC EDGAR submissions 与 XBRL 适配器
 - [x] 技术指标引擎
 - [x] 预测账本与校准原语
 - [x] 人设 profile 与大师先验
 - [x] 离线 demo 与测试
-- [ ] 免费数据适配器（Tiingo、yfinance、SEC、FRED / ALFRED、GDELT、RSS）
+- [ ] yfinance fallback 适配器
+- [ ] FRED / ALFRED vintage 适配器
+- [ ] GDELT 事件摄入
+- [ ] RSS / IR 摄入
 - [ ] 大盘 / 行业 / 个股看板
 - [ ] 完整预测引擎与情景树
 - [ ] 判断跟踪与复盘

@@ -12,7 +12,7 @@ from typing import Any
 
 from .memory.models import Observation, Outcome, Persona, Prediction, Review, Thesis
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 CONTRACT_MODELS = {
     "Observation": Observation,

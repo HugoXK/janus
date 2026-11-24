@@ -21,7 +21,7 @@ dist/
 
 # Janus local data
 .janus/
-data/
+/data/
 *.db
 *.sqlite
 *.sqlite3

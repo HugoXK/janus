@@ -45,6 +45,10 @@ def asof(
     entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
     when: str = typer.Argument(..., help="ISO timestamp, e.g. 2026-01-15"),
     kind: Optional[str] = typer.Option(None, help="Observation kind filter"),
+    mode: str = typer.Option("published", help="published or observed"),
+    snapshot: Optional[str] = typer.Option(None, help="Snapshot id filter"),
+    limit: Optional[int] = typer.Option(None, help="Maximum rows"),
+    offset: int = typer.Option(0, help="Rows to skip"),
     db: Optional[str] = typer.Option(None, help="SQLite path (default: from config)"),
 ) -> None:
     """Query observations that were knowable at a point in time."""
@@ -66,8 +70,22 @@ def asof(
 
     settings = load_settings()
     store = JanusStore(db or settings.database)
-    rows = store.query_observations_as_of(entity, stamp, kind=observation_kind)
-    typer.echo(f"{len(rows)} observation(s) for {entity} as of {stamp.isoformat()}")
+    try:
+        rows = store.query_observations_as_of(
+            entity,
+            stamp,
+            kind=observation_kind,
+            mode=mode,
+            snapshot_id=snapshot,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(
+        f"{len(rows)} observation(s) for {entity} as of {stamp.isoformat()} "
+        f"(mode={mode}, snapshot={snapshot or '-'})"
+    )
     for row in rows:
         typer.echo(f"- {row.published_at.isoformat()} {row.kind.value} {row.source} {row.value}")
 

@@ -116,7 +116,10 @@ No performance claims yet. The scaffold proves the invariants:
 | Schema migrations are deterministic and idempotent | `tests/test_migrations.py`, `janus migrate` |
 | Config precedence and doctor are tested | `tests/test_config.py`, `janus config doctor` |
 | Future observations never enter an as-of view | `tests/test_asof.py` |
+| Published and observed query modes, snapshots, pagination | `tests/test_asof.py` |
 | As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
+| Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
+| SEC restatement keeps the as-filed fact | `tests/test_sec_edgar.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -129,13 +132,13 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 
 | Area | Now | Next |
 | --- | --- | --- |
-| **Memory** | Bitemporal store, as-of queries, provenance, immutable predictions | Entity graph, dedup, ingestion |
+| **Memory** | Bitemporal store, published/observed modes, snapshots, provenance | Entity graph, dedup, ingestion |
 | **Foresight** | Prediction ledger, calibration, baseline forecaster | Feature store, probabilistic models, scenarios |
 | **Analysis** | RSI, MACD, ATR, Bollinger, OBV, relative strength, breadth helpers | Market / sector / stock dashboards |
 | **Review** | Debrief API, attribution helper | Attribution engine, counterfactual replay |
 | **Taste** | 10-question profile, master priors | Persona-conditioned retrieval, evolution |
 | **Interface** | CLI, demo, MCP skeleton | DSH panels, cron, approvals |
-| **Data** | Adapter contracts | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, GDELT, RSS |
+| **Data** | Tiingo EOD, SEC EDGAR, HTTP cache, blob store | yfinance, FRED / ALFRED, GDELT, RSS |
 
 ## How it works
 
@@ -303,11 +306,17 @@ The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md).
 - [x] Config loader and `janus config doctor`
 - [x] Golden demo and property-based as-of tests
 - [x] Point-in-time store and as-of queries
+- [x] Published/observed query modes, snapshots, and pagination
+- [x] Tiingo EOD adapter
+- [x] SEC EDGAR submissions and XBRL adapter
 - [x] Technical indicator engine
 - [x] Prediction ledger and calibration primitives
 - [x] Persona profile and master priors
 - [x] Offline demo and tests
-- [ ] Free data adapters (Tiingo, yfinance, SEC, FRED / ALFRED, GDELT, RSS)
+- [ ] yfinance fallback adapter
+- [ ] FRED / ALFRED vintage adapter
+- [ ] GDELT event ingestion
+- [ ] RSS / IR ingestion
 - [ ] Market / sector / stock dashboards
 - [ ] Full forecast engine and scenario trees
 - [ ] Thesis tracker and review / debrief

@@ -66,6 +66,7 @@ class Observation(UtcModel):
     confidence: float = 1.0
     raw_hash: str
     raw_uri: Optional[str] = None
+    snapshot_id: Optional[str] = None
 
 
 class Thesis(UtcModel):
