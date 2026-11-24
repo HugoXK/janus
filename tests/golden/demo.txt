@@ -1,0 +1,13 @@
+Janus demo
+============================================================
+as_of:                 2026-01-15T00:00:00+00:00
+observations visible:  20 (future row excluded)
+current RSI(14):       85.5
+thesis:                ACME remains constructive while RSI stays above 50 and price...
+prediction:            P(up over 1M) = 0.65
+prediction settled:    True
+brier score:           0.1175
+expected calib. error: 0.3333
+taste match:           Lynch (0.96)
+============================================================
+This demo is research tooling, not investment advice.

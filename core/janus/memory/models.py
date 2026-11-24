@@ -4,11 +4,28 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UtcModel(BaseModel):
+    """Base model that enforces timezone-aware timestamps.
+
+    Every datetime field must carry a timezone. Values are normalized to UTC so
+    that as-of comparisons never depend on the machine's local time.
+    """
+
+    @model_validator(mode="after")
+    def _normalize_timestamps(self) -> "UtcModel":
+        for name, value in self.__dict__.items():
+            if isinstance(value, datetime):
+                if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+                    raise ValueError(f"{name} must be timezone-aware")
+                object.__setattr__(self, name, value.astimezone(timezone.utc))
+        return self
 
 
 class ObservationKind(str, Enum):
@@ -28,7 +45,7 @@ class ThesisStatus(str, Enum):
     closed = "closed"
 
 
-class Observation(BaseModel):
+class Observation(UtcModel):
     """A point-in-time fact.
 
     ``published_at`` is when the world could have known it.
@@ -51,7 +68,7 @@ class Observation(BaseModel):
     raw_uri: Optional[str] = None
 
 
-class Thesis(BaseModel):
+class Thesis(UtcModel):
     """A belief with explicit assumptions and falsifiers."""
 
     id: str
@@ -68,7 +85,7 @@ class Thesis(BaseModel):
     as_of: datetime
 
 
-class Prediction(BaseModel):
+class Prediction(UtcModel):
     """An ex-ante forecast. Predictions are immutable once recorded."""
 
     id: str
@@ -84,7 +101,7 @@ class Prediction(BaseModel):
     outcome_id: Optional[str] = None
 
 
-class Outcome(BaseModel):
+class Outcome(UtcModel):
     """The ex-post result of a prediction."""
 
     id: str
@@ -95,7 +112,7 @@ class Outcome(BaseModel):
     score: Optional[float] = None
 
 
-class Persona(BaseModel):
+class Persona(UtcModel):
     """A structured investment taste, not a prompt role-play."""
 
     id: str
@@ -107,7 +124,7 @@ class Persona(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
-class Review(BaseModel):
+class Review(UtcModel):
     """A debrief: attribution, calibration, and lessons."""
 
     id: str

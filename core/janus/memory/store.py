@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
+from .migrations import apply_migrations, current_version
 from .models import (
     Observation,
     ObservationKind,
@@ -16,91 +17,6 @@ from .models import (
     Thesis,
     ThesisStatus,
 )
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS observation (
-    id            TEXT PRIMARY KEY,
-    entity_id     TEXT NOT NULL,
-    kind          TEXT NOT NULL,
-    source        TEXT NOT NULL,
-    published_at  TEXT NOT NULL,
-    observed_at   TEXT NOT NULL,
-    valid_from    TEXT,
-    valid_to      TEXT,
-    value         TEXT NOT NULL,
-    unit          TEXT,
-    confidence    REAL NOT NULL,
-    raw_hash      TEXT NOT NULL,
-    raw_uri       TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_observation_entity_published
-    ON observation(entity_id, published_at);
-CREATE INDEX IF NOT EXISTS idx_observation_kind
-    ON observation(kind);
-
-CREATE TABLE IF NOT EXISTS thesis (
-    id            TEXT PRIMARY KEY,
-    entity_id     TEXT NOT NULL,
-    persona_id    TEXT,
-    horizon       TEXT NOT NULL,
-    statement     TEXT NOT NULL,
-    assumptions   TEXT NOT NULL DEFAULT '[]',
-    catalysts     TEXT NOT NULL DEFAULT '[]',
-    risks         TEXT NOT NULL DEFAULT '[]',
-    falsifiers    TEXT NOT NULL DEFAULT '[]',
-    status        TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    as_of         TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_thesis_entity ON thesis(entity_id);
-CREATE INDEX IF NOT EXISTS idx_thesis_status ON thesis(status);
-
-CREATE TABLE IF NOT EXISTS prediction (
-    id             TEXT PRIMARY KEY,
-    thesis_id      TEXT NOT NULL,
-    target         TEXT NOT NULL,
-    horizon        TEXT NOT NULL,
-    probability    REAL,
-    quantiles      TEXT NOT NULL DEFAULT '{}',
-    model_version  TEXT NOT NULL,
-    features_hash  TEXT NOT NULL,
-    created_at     TEXT NOT NULL,
-    as_of          TEXT NOT NULL,
-    outcome_id     TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_prediction_thesis ON prediction(thesis_id);
-CREATE INDEX IF NOT EXISTS idx_prediction_open ON prediction(outcome_id);
-
-CREATE TABLE IF NOT EXISTS outcome (
-    id              TEXT PRIMARY KEY,
-    prediction_id   TEXT NOT NULL,
-    realized_value  TEXT NOT NULL,
-    realized_at     TEXT NOT NULL,
-    source          TEXT NOT NULL,
-    score           REAL
-);
-CREATE INDEX IF NOT EXISTS idx_outcome_prediction ON outcome(prediction_id);
-
-CREATE TABLE IF NOT EXISTS persona (
-    id            TEXT PRIMARY KEY,
-    name          TEXT NOT NULL,
-    profile       TEXT NOT NULL,
-    weights       TEXT NOT NULL,
-    rules         TEXT NOT NULL DEFAULT '{}',
-    version       TEXT NOT NULL,
-    created_at    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS review (
-    id             TEXT PRIMARY KEY,
-    prediction_id  TEXT NOT NULL,
-    attribution    TEXT NOT NULL,
-    calibration    REAL,
-    lessons        TEXT NOT NULL DEFAULT '',
-    created_at     TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_review_prediction ON review(prediction_id);
-"""
 
 
 class JanusStore:
@@ -117,8 +33,11 @@ class JanusStore:
         self.init_schema()
 
     def init_schema(self) -> None:
-        self._conn.executescript(SCHEMA)
-        self._conn.commit()
+        apply_migrations(self._conn)
+
+    @property
+    def schema_version(self) -> int:
+        return current_version(self._conn)
 
     def close(self) -> None:
         self._conn.close()

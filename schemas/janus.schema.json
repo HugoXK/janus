@@ -1,0 +1,448 @@
+{
+  "$defs": {
+    "Observation": {
+      "$defs": {
+        "ObservationKind": {
+          "enum": [
+            "price",
+            "fundamental",
+            "news",
+            "macro",
+            "filing",
+            "sentiment"
+          ],
+          "title": "ObservationKind",
+          "type": "string"
+        }
+      },
+      "description": "A point-in-time fact.\n\n``published_at`` is when the world could have known it.\n``observed_at`` is when Janus actually ingested it.\n``valid_from`` / ``valid_to`` describe the fact's own validity window.",
+      "properties": {
+        "confidence": {
+          "default": 1.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "entity_id": {
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ObservationKind"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "published_at": {
+          "format": "date-time",
+          "title": "Published At",
+          "type": "string"
+        },
+        "raw_hash": {
+          "title": "Raw Hash",
+          "type": "string"
+        },
+        "raw_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Uri"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_to": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid To"
+        },
+        "value": {
+          "title": "Value",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "entity_id",
+        "kind",
+        "source",
+        "published_at",
+        "value",
+        "raw_hash"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "Outcome": {
+      "description": "The ex-post result of a prediction.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "prediction_id": {
+          "title": "Prediction Id",
+          "type": "string"
+        },
+        "realized_at": {
+          "format": "date-time",
+          "title": "Realized At",
+          "type": "string"
+        },
+        "realized_value": {
+          "title": "Realized Value",
+          "type": "object"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "prediction_id",
+        "realized_value",
+        "realized_at",
+        "source"
+      ],
+      "title": "Outcome",
+      "type": "object"
+    },
+    "Persona": {
+      "description": "A structured investment taste, not a prompt role-play.",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "profile": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Profile",
+          "type": "object"
+        },
+        "rules": {
+          "title": "Rules",
+          "type": "object"
+        },
+        "version": {
+          "default": "0.1.0",
+          "title": "Version",
+          "type": "string"
+        },
+        "weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Weights",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "profile",
+        "weights"
+      ],
+      "title": "Persona",
+      "type": "object"
+    },
+    "Prediction": {
+      "description": "An ex-ante forecast. Predictions are immutable once recorded.",
+      "properties": {
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "features_hash": {
+          "title": "Features Hash",
+          "type": "string"
+        },
+        "horizon": {
+          "title": "Horizon",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "model_version": {
+          "title": "Model Version",
+          "type": "string"
+        },
+        "outcome_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome Id"
+        },
+        "probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability"
+        },
+        "quantiles": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Quantiles",
+          "type": "object"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "thesis_id": {
+          "title": "Thesis Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "thesis_id",
+        "target",
+        "horizon",
+        "model_version",
+        "features_hash",
+        "as_of"
+      ],
+      "title": "Prediction",
+      "type": "object"
+    },
+    "Review": {
+      "description": "A debrief: attribution, calibration, and lessons.",
+      "properties": {
+        "attribution": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Attribution",
+          "type": "object"
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lessons": {
+          "default": "",
+          "title": "Lessons",
+          "type": "string"
+        },
+        "prediction_id": {
+          "title": "Prediction Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "prediction_id",
+        "attribution"
+      ],
+      "title": "Review",
+      "type": "object"
+    },
+    "Thesis": {
+      "$defs": {
+        "ThesisStatus": {
+          "enum": [
+            "active",
+            "strengthened",
+            "weakened",
+            "broken",
+            "closed"
+          ],
+          "title": "ThesisStatus",
+          "type": "string"
+        }
+      },
+      "description": "A belief with explicit assumptions and falsifiers.",
+      "properties": {
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "catalysts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Catalysts",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "entity_id": {
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "falsifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Falsifiers",
+          "type": "array"
+        },
+        "horizon": {
+          "title": "Horizon",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "persona_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Persona Id"
+        },
+        "risks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ThesisStatus",
+          "default": "active"
+        }
+      },
+      "required": [
+        "id",
+        "entity_id",
+        "horizon",
+        "statement",
+        "as_of"
+      ],
+      "title": "Thesis",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": 1,
+  "title": "Janus domain contracts"
+}

@@ -7,6 +7,11 @@ criteria.
 
 ## How to read this
 
+**Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, and JAN-005 are
+implemented. See `schemas/janus.schema.json`, `tests/test_contracts.py`,
+`tests/test_migrations.py`, `tests/test_config.py`, and
+`tests/test_asof_hypothesis.py`.
+
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
   memory, M2 analysis, M3 forecast and review, M4 interface, M5 evaluation and
   release.

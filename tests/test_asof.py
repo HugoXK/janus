@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -66,3 +67,22 @@ def test_wrapper_uses_as_of_query() -> None:
     rows = observations_as_of(store, "ACME", as_of)
 
     assert [row.id for row in rows] == ["past"]
+
+
+def test_randomized_as_of_invariant() -> None:
+    rng = random.Random(7)
+    store = JanusStore(":memory:")
+    as_of = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    expected = set()
+
+    for index in range(200):
+        offset = rng.randint(-10, 10)
+        published = as_of + timedelta(days=offset)
+        store.insert_observation(_obs(str(index), published))
+        if offset <= 0:
+            expected.add(str(index))
+
+    rows = store.query_observations_as_of("ACME", as_of)
+
+    assert {row.id for row in rows} == expected
+    assert all(row.published_at <= as_of for row in rows)
