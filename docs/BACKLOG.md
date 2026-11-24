@@ -8,12 +8,14 @@ criteria.
 ## How to read this
 
 **Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, JAN-005, JAN-007,
-JAN-008, JAN-009, JAN-010, JAN-015, JAN-016, JAN-019, JAN-049, and JAN-050 are
-implemented. See `schemas/janus.schema.json`, `tests/test_contracts.py`,
-`tests/test_migrations.py`, `tests/test_config.py`,
+JAN-008, JAN-009, JAN-010, JAN-015, JAN-016, JAN-019, JAN-023, JAN-024, JAN-025,
+JAN-027, JAN-049, and JAN-050 are implemented. See `schemas/janus.schema.json`,
+`tests/test_contracts.py`, `tests/test_migrations.py`, `tests/test_config.py`,
 `tests/test_asof_hypothesis.py`, `tests/test_tiingo.py`,
 `tests/test_sec_edgar.py`, `tests/test_entities.py`, `tests/test_provenance.py`,
-`tests/test_yfinance.py`, `tests/test_fred.py`, and `tests/test_copy.py`.
+`tests/test_yfinance.py`, `tests/test_fred.py`, `tests/test_breadth.py`,
+`tests/test_regime.py`, `tests/test_sector.py`, `tests/test_features.py`,
+`tests/test_dashboards.py`, and `tests/test_copy.py`.
 
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
   memory, M2 analysis, M3 forecast and review, M4 interface, M5 evaluation and

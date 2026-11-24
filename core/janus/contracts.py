@@ -12,9 +12,15 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from .analysis.dashboards import (
+    MarketDashboard,
+    SectorDashboard,
+    SectorRow,
+    StockDashboard,
+)
 from .memory.models import Observation, Outcome, Persona, Prediction, Review, Thesis
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 CONTRACT_MODELS: dict[str, type[BaseModel]] = {
     "Observation": Observation,
@@ -23,6 +29,10 @@ CONTRACT_MODELS: dict[str, type[BaseModel]] = {
     "Outcome": Outcome,
     "Persona": Persona,
     "Review": Review,
+    "MarketDashboard": MarketDashboard,
+    "SectorRow": SectorRow,
+    "SectorDashboard": SectorDashboard,
+    "StockDashboard": StockDashboard,
 }
 
 

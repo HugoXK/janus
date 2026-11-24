@@ -149,6 +149,25 @@ MIGRATIONS: list[Migration] = [
             ON entity_alias(entity_id);
         """,
     ),
+    Migration(
+        version=4,
+        name="feature_store",
+        sql="""
+        CREATE TABLE IF NOT EXISTS feature_value (
+            entity_id      TEXT NOT NULL,
+            as_of          TEXT NOT NULL,
+            name           TEXT NOT NULL,
+            version        TEXT NOT NULL,
+            value          TEXT NOT NULL,
+            features_hash  TEXT NOT NULL,
+            source_hash    TEXT NOT NULL DEFAULT '',
+            computed_at    TEXT NOT NULL,
+            PRIMARY KEY (entity_id, as_of, name, version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_feature_entity_asof
+            ON feature_value(entity_id, as_of);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)
