@@ -24,7 +24,11 @@ uv run janus demo
 
 ## Pull requests
 
+- Never push directly to `main`; every change goes through a PR.
+- A PR needs a review and green checks before merge.
+- Required checks: `tests-ok`, `review-gate`, and `merge-gate`.
 - Add or update tests.
 - Keep the demo working: `uv run janus demo`.
 - Update the relevant ADR or doc when a design decision changes.
 - Do not commit API keys, broker credentials, or licensed data.
+- Link the issue from `docs/BACKLOG.md` and keep the PR focused.

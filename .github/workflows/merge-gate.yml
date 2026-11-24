@@ -1,0 +1,43 @@
+name: Merge gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: merge-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  merge-gate:
+    name: merge-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        if: hashFiles('base/.github/scripts/merge_gate.py') == ''
+        with:
+          path: pr
+          persist-credentials: false
+      - name: Require approval and green tests-ok
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEWER_LOGIN: HugoXK-bot
+        run: |
+          dir="base"
+          if [ ! -f base/.github/scripts/merge_gate.py ]; then
+            dir="pr"
+          fi
+          python3 "$dir/.github/scripts/merge_gate.py"

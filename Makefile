@@ -6,6 +6,12 @@ install:
 test:
 	uv run pytest
 
+coverage:
+	uv run pytest --cov=janus --cov-report=term-missing
+
+schema:
+	uv run janus schema check
+
 lint:
 	uv run ruff check .
 	uv run mypy core/janus || true

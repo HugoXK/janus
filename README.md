@@ -119,7 +119,12 @@ No performance claims yet. The scaffold proves the invariants:
 | Published and observed query modes, snapshots, pagination | `tests/test_asof.py` |
 | As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
 | Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
+| Entity graph resolves ticker, CIK, and names | `tests/test_entities.py` |
+| Provenance trace and as-of search | `tests/test_provenance.py` |
+| yfinance maps adjusted close | `tests/test_yfinance.py` |
+| FRED latest and ALFRED vintage | `tests/test_fred.py` |
 | SEC restatement keeps the as-filed fact | `tests/test_sec_edgar.py` |
+| Public copy has no return promises | `tests/test_copy.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -132,13 +137,13 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 
 | Area | Now | Next |
 | --- | --- | --- |
-| **Memory** | Bitemporal store, published/observed modes, snapshots, provenance | Entity graph, dedup, ingestion |
+| **Memory** | Bitemporal store, published/observed modes, snapshots, entity graph, provenance | Dedup, retention, snapshot export |
 | **Foresight** | Prediction ledger, calibration, baseline forecaster | Feature store, probabilistic models, scenarios |
 | **Analysis** | RSI, MACD, ATR, Bollinger, OBV, relative strength, breadth helpers | Market / sector / stock dashboards |
 | **Review** | Debrief API, attribution helper | Attribution engine, counterfactual replay |
 | **Taste** | 10-question profile, master priors | Persona-conditioned retrieval, evolution |
 | **Interface** | CLI, demo, MCP skeleton | DSH panels, cron, approvals |
-| **Data** | Tiingo EOD, SEC EDGAR, HTTP cache, blob store | yfinance, FRED / ALFRED, GDELT, RSS |
+| **Data** | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, cache, blob store | GDELT, RSS |
 
 ## How it works
 
@@ -298,7 +303,8 @@ examples/        offline demo entry point
 
 ## Roadmap
 
-The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md).
+The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md). The v0.1.0
+release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 
 - [x] Repository scaffold
 - [x] Domain contracts and JSON Schema
@@ -308,13 +314,17 @@ The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md).
 - [x] Point-in-time store and as-of queries
 - [x] Published/observed query modes, snapshots, and pagination
 - [x] Tiingo EOD adapter
+- [x] yfinance fallback adapter
 - [x] SEC EDGAR submissions and XBRL adapter
+- [x] FRED / ALFRED vintage adapter
+- [x] Entity graph and alias resolution
+- [x] Provenance traversal API
+- [x] Review gate, merge gate, and PR workflow
+- [x] Secret scan and release workflows
 - [x] Technical indicator engine
 - [x] Prediction ledger and calibration primitives
 - [x] Persona profile and master priors
 - [x] Offline demo and tests
-- [ ] yfinance fallback adapter
-- [ ] FRED / ALFRED vintage adapter
 - [ ] GDELT event ingestion
 - [ ] RSS / IR ingestion
 - [ ] Market / sector / stock dashboards
