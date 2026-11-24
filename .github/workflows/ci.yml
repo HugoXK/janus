@@ -102,7 +102,7 @@ jobs:
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha }}"
           if [ -z "$base" ]; then base="origin/main"; fi
-          bad=$(git log --format='%an <%ae>|%cn <%ce>' "$base"..HEAD \
+          bad=$(git log --no-merges --format='%an <%ae>|%cn <%ce>' "$base"..HEAD \
             | grep -v '^HugoXK <ke.xu@zju.edu.cn>|HugoXK <ke.xu@zju.edu.cn>$' \
             | grep -v 'dependabot' || true)
           if [ -n "$bad" ]; then
@@ -112,10 +112,9 @@ jobs:
           fi
 
   types:
-    name: typecheck (advisory)
+    name: typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
@@ -125,7 +124,7 @@ jobs:
   tests-ok:
     name: tests-ok
     if: always()
-    needs: [lint, test, coverage, schema, build, dsh, identity]
+    needs: [lint, test, coverage, schema, build, dsh, identity, types]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -138,6 +137,7 @@ jobs:
           BUILD: ${{ needs.build.result }}
           DSH: ${{ needs.dsh.result }}
           IDENTITY: ${{ needs.identity.result }}
+          TYPES: ${{ needs.types.result }}
         run: |
-          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH identity=$IDENTITY"
-          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$IDENTITY" = success ]
+          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH identity=$IDENTITY types=$TYPES"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$IDENTITY" = success ] && [ "$TYPES" = success ]

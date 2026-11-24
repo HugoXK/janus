@@ -98,7 +98,9 @@ def run_demo() -> None:
     print(f"current RSI(14):       {current_rsi:.1f}")
     print(f"thesis:                {thesis.statement[:60]}...")
     print(f"prediction:            P(up over 1M) = {prediction.probability:.2f}")
-    print(f"prediction settled:    {store.get_prediction(prediction.id).outcome_id is not None}")
+    settled = store.get_prediction(prediction.id)
+    is_settled = settled is not None and settled.outcome_id is not None
+    print(f"prediction settled:    {is_settled}")
     print(f"brier score:           {brier_score(probabilities, outcomes):.4f}")
     print(f"expected calib. error: {expected_calibration_error(probabilities, outcomes):.4f}")
     print(f"taste match:           {master} ({similarity:.2f})")

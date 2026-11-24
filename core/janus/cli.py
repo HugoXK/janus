@@ -10,7 +10,7 @@ import typer
 
 from . import __version__
 from .config import load_settings
-from .contracts import SCHEMA_VERSION, export_schema, load_schema, write_schema
+from .contracts import SCHEMA_VERSION, check_schema, write_schema
 from .demo import run_demo
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
@@ -145,12 +145,10 @@ def schema_check(
 ) -> None:
     """Fail if the checked-in schema differs from the models."""
 
-    expected = export_schema()
-    actual = load_schema(path)
-    if expected != actual:
-        typer.echo(f"schema mismatch: {path}", err=True)
+    ok, detail = check_schema(path)
+    typer.echo(detail)
+    if not ok:
         raise typer.Exit(code=1)
-    typer.echo(f"schema ok: {path}")
 
 
 @app.command()

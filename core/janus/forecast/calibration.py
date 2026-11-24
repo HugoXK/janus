@@ -76,7 +76,7 @@ def expected_calibration_error(
     probabilities: Sequence[float], outcomes: Sequence[float], bins: int = 10
 ) -> float:
     p, y = _as_arrays(probabilities, outcomes)
-    curve = reliability_curve(p, y, bins=bins)
+    curve = reliability_curve(p.tolist(), y.tolist(), bins=bins)
     total = len(p)
     ece = 0.0
     for bucket in curve:
