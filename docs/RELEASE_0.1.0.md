@@ -1,5 +1,8 @@
 # v0.1.0 release plan
 
+**Status:** PR #1 (data foundation) merged. PR #2 (analysis, feature store,
+dashboard contracts) is in review.
+
 ## Goal
 
 A local-first, point-in-time market agent with:

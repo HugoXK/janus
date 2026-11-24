@@ -125,6 +125,9 @@ No performance claims yet. The scaffold proves the invariants:
 | FRED latest and ALFRED vintage | `tests/test_fred.py` |
 | SEC restatement keeps the as-filed fact | `tests/test_sec_edgar.py` |
 | Public copy has no return promises | `tests/test_copy.py` |
+| Breadth, regime, and sector rotation are deterministic | `tests/test_breadth.py`, `tests/test_regime.py`, `tests/test_sector.py` |
+| Features are point-in-time and hash-addressed | `tests/test_features.py` |
+| Dashboard contracts validate | `tests/test_dashboards.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -139,7 +142,7 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 | --- | --- | --- |
 | **Memory** | Bitemporal store, published/observed modes, snapshots, entity graph, provenance | Dedup, retention, snapshot export |
 | **Foresight** | Prediction ledger, calibration, baseline forecaster | Feature store, probabilistic models, scenarios |
-| **Analysis** | RSI, MACD, ATR, Bollinger, OBV, relative strength, breadth helpers | Market / sector / stock dashboards |
+| **Analysis** | RSI/MACD/ATR/Bollinger/OBV, breadth, regime, sector RRG, feature store, dashboard contracts | DSH panels and the full UI |
 | **Review** | Debrief API, attribution helper | Attribution engine, counterfactual replay |
 | **Taste** | 10-question profile, master priors | Persona-conditioned retrieval, evolution |
 | **Interface** | CLI, demo, MCP skeleton | DSH panels, cron, approvals |
@@ -322,12 +325,15 @@ release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 - [x] Review gate, merge gate, and PR workflow
 - [x] Secret scan and release workflows
 - [x] Technical indicator engine
+- [x] Breadth, regime, and sector rotation features
+- [x] Point-in-time feature store
+- [x] Market / sector / stock dashboard contracts
 - [x] Prediction ledger and calibration primitives
 - [x] Persona profile and master priors
 - [x] Offline demo and tests
 - [ ] GDELT event ingestion
 - [ ] RSS / IR ingestion
-- [ ] Market / sector / stock dashboards
+- [ ] DSH panels for market / sector / stock dashboards
 - [ ] Full forecast engine and scenario trees
 - [ ] Thesis tracker and review / debrief
 - [ ] DSH plugin panels, commands, and cron

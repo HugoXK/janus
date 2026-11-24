@@ -5,7 +5,7 @@ at the requested `as_of` time.**
 
 ## Schema version and migrations
 
-- `SCHEMA_VERSION` lives in `core/janus/contracts.py`; currently `1`.
+- `SCHEMA_VERSION` lives in `core/janus/contracts.py`; currently `4`.
 - `schemas/janus.schema.json` is the checked-in contract. `janus schema check`
   fails if it drifts from the Pydantic models.
 - Migrations live in `core/janus/memory/migrations.py`. The `schema_migrations`
@@ -51,6 +51,14 @@ version. Personas are priors, not prompt role-play.
 ### `review`
 
 A debrief: attribution weights, calibration, and lessons.
+
+### `feature_value`
+
+Point-in-time materialized features. The primary key is
+`(entity_id, as_of, name, version)`. Reads return the latest materialization at
+or before the requested time, so a later restatement cannot leak into an earlier
+view. `features_hash` identifies the vector; `source_hash` points at the input
+snapshot.
 
 ## As-of semantics
 

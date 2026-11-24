@@ -73,6 +73,9 @@ Janus 是罗马神话里的门神、过渡之神、开端与终结之神，**Jan
 | FRED 最新值与 ALFRED vintage | `tests/test_fred.py` |
 | SEC 重述不会覆盖 as-filed 事实 | `tests/test_sec_edgar.py` |
 | 公开文案没有收益承诺 | `tests/test_copy.py` |
+| 宽度、regime、行业轮动是确定性的 | `tests/test_breadth.py`、`tests/test_regime.py`、`tests/test_sector.py` |
+| 特征是 point-in-time 且带 hash | `tests/test_features.py` |
+| Dashboard contracts 可验证 | `tests/test_dashboards.py` |
 | 预测不可变，只能结算一次 | `tests/test_ledger.py` |
 | RSI 有界；MACD / Bollinger / OBV 行为正确 | `tests/test_indicators.py` |
 | 离线闭环不需要付费 API，且输出匹配 golden file | `tests/test_demo_golden.py` |
@@ -85,7 +88,7 @@ Demo 会展示：20 条可见观察、排除一条未来数据、计算 RSI、�
 | --- | --- | --- |
 | **Memory** | bitemporal 存储、published/observed 模式、快照、实体图、provenance | 去重、保留策略、快照导出 |
 | **Foresight** | 预测账本、校准、baseline | 特征库、概率模型、情景树 |
-| **Analysis** | RSI、MACD、ATR、Bollinger、OBV、相对强度、宽度 | 大盘 / 行业 / 个股看板 |
+| **Analysis** | RSI/MACD/ATR/Bollinger/OBV、宽度、regime、行业 RRG、feature store、dashboard contracts | DSH 面板与完整 UI |
 | **Review** | debrief API、归因辅助 | 归因引擎、反事实重放 |
 | **Taste** | 10 题 profile、大师先验 | 人设条件检索、进化 |
 | **Interface** | CLI、demo、MCP 骨架 | DSH 面板、cron、审批 |
@@ -252,12 +255,15 @@ examples/        离线 demo 入口
 - [x] Review gate、merge gate、PR 流程
 - [x] Secret scan 与 release workflow
 - [x] 技术指标引擎
+- [x] 宽度、regime、行业轮动特征
+- [x] point-in-time feature store
+- [x] 大盘 / 行业 / 个股 dashboard contracts
 - [x] 预测账本与校准原语
 - [x] 人设 profile 与大师先验
 - [x] 离线 demo 与测试
 - [ ] GDELT 事件摄入
 - [ ] RSS / IR 摄入
-- [ ] 大盘 / 行业 / 个股看板
+- [ ] 大盘 / 行业 / 个股 DSH 面板
 - [ ] 完整预测引擎与情景树
 - [ ] 判断跟踪与复盘
 - [ ] DSH 面板、命令、cron

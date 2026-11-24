@@ -1,5 +1,53 @@
 {
   "$defs": {
+    "MarketDashboard": {
+      "properties": {
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "breadth": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Breadth",
+          "type": "object"
+        },
+        "features_hash": {
+          "title": "Features Hash",
+          "type": "string"
+        },
+        "indices": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Indices",
+          "type": "object"
+        },
+        "regime": {
+          "title": "Regime",
+          "type": "string"
+        },
+        "volatility": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Volatility",
+          "type": "object"
+        }
+      },
+      "required": [
+        "as_of",
+        "regime",
+        "breadth",
+        "volatility",
+        "indices",
+        "features_hash"
+      ],
+      "title": "MarketDashboard",
+      "type": "object"
+    },
     "Observation": {
       "$defs": {
         "ObservationKind": {
@@ -356,6 +404,150 @@
       "title": "Review",
       "type": "object"
     },
+    "SectorDashboard": {
+      "$defs": {
+        "SectorRow": {
+          "properties": {
+            "breadth": {
+              "title": "Breadth",
+              "type": "number"
+            },
+            "quadrant": {
+              "title": "Quadrant",
+              "type": "string"
+            },
+            "relative_return_63d": {
+              "title": "Relative Return 63D",
+              "type": "number"
+            },
+            "rs_momentum": {
+              "title": "Rs Momentum",
+              "type": "number"
+            },
+            "rs_ratio": {
+              "title": "Rs Ratio",
+              "type": "number"
+            },
+            "sector": {
+              "title": "Sector",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sector",
+            "relative_return_63d",
+            "rs_ratio",
+            "rs_momentum",
+            "quadrant",
+            "breadth"
+          ],
+          "title": "SectorRow",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "benchmark": {
+          "title": "Benchmark",
+          "type": "string"
+        },
+        "features_hash": {
+          "title": "Features Hash",
+          "type": "string"
+        },
+        "sectors": {
+          "items": {
+            "$ref": "#/$defs/SectorRow"
+          },
+          "title": "Sectors",
+          "type": "array"
+        }
+      },
+      "required": [
+        "as_of",
+        "benchmark",
+        "sectors",
+        "features_hash"
+      ],
+      "title": "SectorDashboard",
+      "type": "object"
+    },
+    "SectorRow": {
+      "properties": {
+        "breadth": {
+          "title": "Breadth",
+          "type": "number"
+        },
+        "quadrant": {
+          "title": "Quadrant",
+          "type": "string"
+        },
+        "relative_return_63d": {
+          "title": "Relative Return 63D",
+          "type": "number"
+        },
+        "rs_momentum": {
+          "title": "Rs Momentum",
+          "type": "number"
+        },
+        "rs_ratio": {
+          "title": "Rs Ratio",
+          "type": "number"
+        },
+        "sector": {
+          "title": "Sector",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sector",
+        "relative_return_63d",
+        "rs_ratio",
+        "rs_momentum",
+        "quadrant",
+        "breadth"
+      ],
+      "title": "SectorRow",
+      "type": "object"
+    },
+    "StockDashboard": {
+      "properties": {
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "close": {
+          "title": "Close",
+          "type": "number"
+        },
+        "entity_id": {
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "features": {
+          "title": "Features",
+          "type": "object"
+        },
+        "features_hash": {
+          "title": "Features Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "as_of",
+        "entity_id",
+        "close",
+        "features",
+        "features_hash"
+      ],
+      "title": "StockDashboard",
+      "type": "object"
+    },
     "Thesis": {
       "$defs": {
         "ThesisStatus": {
@@ -455,6 +647,6 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "schema_version": 3,
+  "schema_version": 4,
   "title": "Janus domain contracts"
 }
