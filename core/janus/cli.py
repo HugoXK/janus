@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import typer
 
 from . import __version__
-from .config import Settings
+from .config import load_settings
+from .contracts import SCHEMA_VERSION, export_schema, load_schema, write_schema
 from .demo import run_demo
+from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
 
@@ -15,13 +20,17 @@ app = typer.Typer(
     add_completion=False,
     help="Janus — a market agent with memory and foresight.",
 )
+config_app = typer.Typer(help="Inspect and validate local configuration.")
+schema_app = typer.Typer(help="Export and verify the domain contract schema.")
+app.add_typer(config_app, name="config")
+app.add_typer(schema_app, name="schema")
 
 
 @app.command()
 def version() -> None:
-    """Print the Janus version."""
+    """Print the Janus version and domain schema version."""
 
-    typer.echo(__version__)
+    typer.echo(f"janus {__version__} (schema {SCHEMA_VERSION})")
 
 
 @app.command()
@@ -36,7 +45,7 @@ def asof(
     entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
     when: str = typer.Argument(..., help="ISO timestamp, e.g. 2026-01-15"),
     kind: Optional[str] = typer.Option(None, help="Observation kind filter"),
-    db: Optional[str] = typer.Option(None, help="SQLite path (default: ~/.janus/janus.db)"),
+    db: Optional[str] = typer.Option(None, help="SQLite path (default: from config)"),
 ) -> None:
     """Query observations that were knowable at a point in time."""
 
@@ -55,12 +64,94 @@ def asof(
             valid = ", ".join(item.value for item in ObservationKind)
             raise typer.BadParameter(f"kind must be one of: {valid}") from exc
 
-    settings = Settings()
+    settings = load_settings()
     store = JanusStore(db or settings.database)
     rows = store.query_observations_as_of(entity, stamp, kind=observation_kind)
     typer.echo(f"{len(rows)} observation(s) for {entity} as of {stamp.isoformat()}")
     for row in rows:
         typer.echo(f"- {row.published_at.isoformat()} {row.kind.value} {row.source} {row.value}")
+
+
+@config_app.command("show")
+def config_show(
+    config: Optional[Path] = typer.Option(None, "--config", help="Explicit config file"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show the effective settings with secrets masked."""
+
+    settings = load_settings(config_path=config)
+    data = settings.redacted()
+    if as_json:
+        typer.echo(json.dumps(data, indent=2, sort_keys=True))
+    else:
+        for key, value in data.items():
+            typer.echo(f"{key}: {value}")
+
+
+@config_app.command("doctor")
+def config_doctor(
+    config: Optional[Path] = typer.Option(None, "--config", help="Explicit config file"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check paths, timezone, clock, and provider keys."""
+
+    settings = load_settings(config_path=config)
+    checks = settings.doctor()
+    if as_json:
+        typer.echo(json.dumps([check.__dict__ for check in checks], indent=2, sort_keys=True))
+    else:
+        for check in checks:
+            status = "ok" if check.ok else ("warn" if not check.critical else "FAIL")
+            typer.echo(f"[{status}] {check.name}: {check.detail}")
+    if any(not check.ok and check.critical for check in checks):
+        raise typer.Exit(code=1)
+
+
+@schema_app.command("export")
+def schema_export(
+    out: Path = typer.Option(
+        Path("schemas/janus.schema.json"), "--out", help="Output path"
+    ),
+) -> None:
+    """Write the current domain contract schema."""
+
+    path = write_schema(out)
+    typer.echo(f"wrote {path}")
+
+
+@schema_app.command("check")
+def schema_check(
+    path: Path = typer.Option(
+        Path("schemas/janus.schema.json"), "--path", help="Schema to verify"
+    ),
+) -> None:
+    """Fail if the checked-in schema differs from the models."""
+
+    expected = export_schema()
+    actual = load_schema(path)
+    if expected != actual:
+        typer.echo(f"schema mismatch: {path}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"schema ok: {path}")
+
+
+@app.command()
+def migrate(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show pending migrations only"),
+) -> None:
+    """Apply pending schema migrations."""
+
+    settings = load_settings()
+    path = db or settings.database
+    connection = sqlite3.connect(path)
+    try:
+        applied = apply_migrations(connection, dry_run=dry_run)
+        version = current_version(connection)
+    finally:
+        connection.close()
+    action = "would apply" if dry_run else "applied"
+    typer.echo(f"{action}: {applied or 'none'}; current version: {version}")
 
 
 def main() -> None:

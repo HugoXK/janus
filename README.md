@@ -112,10 +112,14 @@ No performance claims yet. The scaffold proves the invariants:
 
 | Invariant | Where |
 | --- | --- |
+| Domain contracts and JSON Schema are frozen | `schemas/janus.schema.json`, `tests/test_contracts.py` |
+| Schema migrations are deterministic and idempotent | `tests/test_migrations.py`, `janus migrate` |
+| Config precedence and doctor are tested | `tests/test_config.py`, `janus config doctor` |
 | Future observations never enter an as-of view | `tests/test_asof.py` |
+| As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
-| The offline loop runs without a paid API | `uv run janus demo` |
+| The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
 
 The demo shows 20 visible observations, excludes a future row, computes RSI,
 records a prediction, settles it, computes Brier / ECE on a toy sample, and
@@ -294,6 +298,10 @@ examples/        offline demo entry point
 The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md).
 
 - [x] Repository scaffold
+- [x] Domain contracts and JSON Schema
+- [x] Schema migrations
+- [x] Config loader and `janus config doctor`
+- [x] Golden demo and property-based as-of tests
 - [x] Point-in-time store and as-of queries
 - [x] Technical indicator engine
 - [x] Prediction ledger and calibration primitives

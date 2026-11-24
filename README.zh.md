@@ -60,10 +60,14 @@ Janus 是罗马神话里的门神、过渡之神、开端与终结之神，**Jan
 
 | 不变量 | 位置 |
 | --- | --- |
+| 领域契约与 JSON Schema 已冻结 | `schemas/janus.schema.json`、`tests/test_contracts.py` |
+| 迁移确定、可重复执行 | `tests/test_migrations.py`、`janus migrate` |
+| 配置优先级与 doctor 有测试 | `tests/test_config.py`、`janus config doctor` |
 | 未来数据永远不会进入 as-of 视图 | `tests/test_asof.py` |
+| as-of 性质在生成输入下成立 | `tests/test_asof_hypothesis.py` |
 | 预测不可变，只能结算一次 | `tests/test_ledger.py` |
 | RSI 有界；MACD / Bollinger / OBV 行为正确 | `tests/test_indicators.py` |
-| 离线闭环不需要付费 API | `uv run janus demo` |
+| 离线闭环不需要付费 API，且输出匹配 golden file | `tests/test_demo_golden.py` |
 
 Demo 会展示：20 条可见观察、排除一条未来数据、计算 RSI、记录并结算一个预测、在一个玩具样本上计算 Brier / ECE、匹配一个人设。数字只是冒烟测试，不是 benchmark。
 
@@ -225,6 +229,10 @@ examples/        离线 demo 入口
 完整的 50 个 issue 计划见 [docs/BACKLOG.md](docs/BACKLOG.md)。
 
 - [x] 仓库脚手架
+- [x] 领域契约与 JSON Schema
+- [x] Schema 迁移
+- [x] 配置加载与 `janus config doctor`
+- [x] Golden demo 与 property-based as-of 测试
 - [x] point-in-time 存储与 as-of 查询
 - [x] 技术指标引擎
 - [x] 预测账本与校准原语

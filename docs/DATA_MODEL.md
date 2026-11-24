@@ -3,6 +3,18 @@
 The central rule: **an observation is only visible if it was published and valid
 at the requested `as_of` time.**
 
+## Schema version and migrations
+
+- `SCHEMA_VERSION` lives in `core/janus/contracts.py`; currently `1`.
+- `schemas/janus.schema.json` is the checked-in contract. `janus schema check`
+  fails if it drifts from the Pydantic models.
+- Migrations live in `core/janus/memory/migrations.py`. The `schema_migrations`
+  table records applied versions; `janus migrate --dry-run` lists what would run.
+- Compatibility policy: additive fields are allowed within a version; renames
+  and removals require a new version and a migration. No silent data loss.
+- All timestamps are timezone-aware and normalized to UTC by `UtcModel`; naive
+  timestamps are rejected at validation time.
+
 ## Tables
 
 ### `observation`
