@@ -1,8 +1,8 @@
 # Janus
 
 <p align="center">
-  <b>Janus remembers backward, reasons forward.</b><br>
-  A two-faced market agent: one face is memory, the other is foresight.
+  <b>Look back to reason forward.</b><br>
+  A market agent with memory and foresight.
 </p>
 
 > **Status:** `v0.1.0` scaffold. The repository contains the core data model, a
@@ -10,16 +10,32 @@
 > primitives, persona profiles, and a DSH plugin skeleton. It is not investment
 > advice and it does not execute trades.
 
-Janus is a personal, point-in-time, provenance-first market research agent. It
-remembers what you believed, what you knew when you believed it, and whether it
-turned out to be right. It then uses that memory to make better probabilistic
-forecasts about what might happen next.
+Janus is a market agent with two faces. **Memory** records what you believed,
+what you knew, and how it turned out. **Foresight** turns that record into
+calibrated probabilities about what comes next.
+
+Most market tools either drown you in data or sell you a prediction. Janus keeps
+the evidence, remembers the reasoning, and tells you when you were wrong. It is
+local-first, point-in-time, and built to be audited.
+
+## Why the name
+
+Janus is the Roman god of gates, transitions, beginnings, and endings. He is
+shown looking both ways because every threshold is an ending and a beginning.
+January is named after him: the month where the old year closes and the new one
+opens.
+
+Markets are full of thresholds. Janus is the instrument for them.
+
+The two faces are not duplicity. They are two disciplines held at once:
+**memory** and **foresight**. One face asks, "What did I believe, and why?" The
+other asks, "What is the probability now?"
 
 ## What Janus is
 
-- **Memory face (past):** every observation, thesis, prediction, and outcome is
+- **Memory (the past):** every observation, thesis, prediction, and outcome is
   recorded with its source, timestamp, and provenance.
-- **Foresight face (future):** technical, fundamental, macro, sentiment, breadth,
+- **Foresight (the future):** technical, fundamental, macro, sentiment, breadth,
   and flow features are combined into probabilistic forecasts, scenarios, and
   regime probabilities.
 - **A closed loop:** observe → analyze → predict → decide (paper) → review →

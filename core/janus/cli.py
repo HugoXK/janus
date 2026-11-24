@@ -11,7 +11,10 @@ from .demo import run_demo
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
 
-app = typer.Typer(add_completion=False, help="Janus — a two-faced market agent.")
+app = typer.Typer(
+    add_completion=False,
+    help="Janus — a market agent with memory and foresight.",
+)
 
 
 @app.command()
