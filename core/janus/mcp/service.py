@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..eval.baselines import ConstantBaseline, RandomBaseline
-from ..eval.beliefbench import BeliefBench
+from ..eval.beliefbench import BeliefBench, Scenario, ScenarioResult
 from ..forecast.calibration_service import CalibrationService
 from ..forecast.ledger import PredictionLedger
 from ..forecast.settlement import DirectionOutcomeResolver, SettlementService
@@ -166,6 +166,7 @@ class JanusService:
         self, scenarios_path: str, baseline: str = "always_up"
     ) -> dict[str, Any]:
         bench = BeliefBench.load(scenarios_path)
+        runner: Callable[[Scenario], ScenarioResult]
         if baseline == "always_up":
             runner = ConstantBaseline(1.0)
         elif baseline == "always_down":
