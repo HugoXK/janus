@@ -222,6 +222,8 @@ examples/        离线 demo 入口
 
 ## 路线图
 
+完整的 50 个 issue 计划见 [docs/BACKLOG.md](docs/BACKLOG.md)。
+
 - [x] 仓库脚手架
 - [x] point-in-time 存储与 as-of 查询
 - [x] 技术指标引擎
