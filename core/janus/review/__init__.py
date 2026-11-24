@@ -1,3 +1,13 @@
-from .debrief import debrief
+from .debrief import (
+    AttributionEngine,
+    debrief,
+    debrief_prediction,
+    simple_attribution,
+)
 
-__all__ = ["debrief"]
+__all__ = [
+    "AttributionEngine",
+    "debrief",
+    "debrief_prediction",
+    "simple_attribution",
+]

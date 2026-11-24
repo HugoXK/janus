@@ -76,6 +76,11 @@ Janus 是罗马神话里的门神、过渡之神、开端与终结之神，**Jan
 | 宽度、regime、行业轮动是确定性的 | `tests/test_breadth.py`、`tests/test_regime.py`、`tests/test_sector.py` |
 | 特征是 point-in-time 且带 hash | `tests/test_features.py` |
 | Dashboard contracts 可验证 | `tests/test_dashboards.py` |
+| baseline logistic 模型与 model card | `tests/test_baseline_model.py` |
+| 校准服务（Platt / isotonic） | `tests/test_calibration_service.py` |
+| settlement 解析方向，禁止重复结算 | `tests/test_settlement.py` |
+| 复盘归因占比和为 1 | `tests/test_debrief.py` |
+| 人设权重会改变证据排序 | `tests/test_persona_weighting.py` |
 | 预测不可变，只能结算一次 | `tests/test_ledger.py` |
 | RSI 有界；MACD / Bollinger / OBV 行为正确 | `tests/test_indicators.py` |
 | 离线闭环不需要付费 API，且输出匹配 golden file | `tests/test_demo_golden.py` |
@@ -87,10 +92,10 @@ Demo 会展示：20 条可见观察、排除一条未来数据、计算 RSI、�
 | 模块 | 现在 | 下一步 |
 | --- | --- | --- |
 | **Memory** | bitemporal 存储、published/observed 模式、快照、实体图、provenance | 去重、保留策略、快照导出 |
-| **Foresight** | 预测账本、校准、baseline | 特征库、概率模型、情景树 |
+| **Foresight** | 预测账本、baseline logistic 模型、校准服务、settlement | 分位数、情景、model registry |
 | **Analysis** | RSI/MACD/ATR/Bollinger/OBV、宽度、regime、行业 RRG、feature store、dashboard contracts | DSH 面板与完整 UI |
-| **Review** | debrief API、归因辅助 | 归因引擎、反事实重放 |
-| **Taste** | 10 题 profile、大师先验 | 人设条件检索、进化 |
+| **Review** | 复盘与归因 baseline | 反事实重放 |
+| **Taste** | 10 题 profile、大师先验、人设条件证据排序 | 人设进化 |
 | **Interface** | CLI、demo、MCP 骨架 | DSH 面板、cron、审批 |
 | **Data** | Tiingo、yfinance、SEC EDGAR、FRED / ALFRED、cache、blob store | GDELT、RSS |
 
@@ -259,13 +264,19 @@ examples/        离线 demo 入口
 - [x] point-in-time feature store
 - [x] 大盘 / 行业 / 个股 dashboard contracts
 - [x] 预测账本与校准原语
+- [x] baseline 方向模型
+- [x] 校准服务（Platt / isotonic）
+- [x] 预测结算与 outcome resolver
+- [x] 复盘与归因 baseline
+- [x] 人设条件证据权重
 - [x] 人设 profile 与大师先验
 - [x] 离线 demo 与测试
 - [ ] GDELT 事件摄入
 - [ ] RSS / IR 摄入
 - [ ] 大盘 / 行业 / 个股 DSH 面板
 - [ ] 完整预测引擎与情景树
-- [ ] 判断跟踪与复盘
+- [x] 判断跟踪与复盘 baseline
+- [ ] 反事实重放
 - [ ] DSH 面板、命令、cron
 - [ ] BeliefBench：lookahead-free 评测
 - [ ] V1.1：期权 / 情绪特征、AgentDescent 人设进化

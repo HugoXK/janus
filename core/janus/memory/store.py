@@ -319,6 +319,26 @@ class JanusStore:
         row = self._conn.execute("SELECT * FROM outcome WHERE id = ?", (outcome_id,)).fetchone()
         return self._row_to_outcome(row) if row else None
 
+    def list_outcomes(self) -> list[Outcome]:
+        rows = self._conn.execute(
+            "SELECT * FROM outcome ORDER BY realized_at DESC"
+        ).fetchall()
+        return [self._row_to_outcome(row) for row in rows]
+
+    def settled_predictions(self) -> list[tuple[Prediction, Outcome]]:
+        rows = self._conn.execute(
+            "SELECT * FROM prediction WHERE outcome_id IS NOT NULL ORDER BY as_of DESC"
+        ).fetchall()
+        pairs: list[tuple[Prediction, Outcome]] = []
+        for row in rows:
+            prediction = self._row_to_prediction(row)
+            if prediction.outcome_id is None:
+                continue
+            outcome = self.get_outcome(prediction.outcome_id)
+            if outcome is not None:
+                pairs.append((prediction, outcome))
+        return pairs
+
     @staticmethod
     def _row_to_prediction(row: sqlite3.Row) -> Prediction:
         return Prediction(
@@ -371,6 +391,12 @@ class JanusStore:
     def get_persona(self, persona_id: str) -> Optional[Persona]:
         row = self._conn.execute("SELECT * FROM persona WHERE id = ?", (persona_id,)).fetchone()
         return self._row_to_persona(row) if row else None
+
+    def list_personas(self) -> list[Persona]:
+        rows = self._conn.execute(
+            "SELECT * FROM persona ORDER BY created_at DESC"
+        ).fetchall()
+        return [self._row_to_persona(row) for row in rows]
 
     def insert_review(self, review: Review) -> None:
         self._conn.execute(
