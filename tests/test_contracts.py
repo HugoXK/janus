@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from janus.contracts import CONTRACT_MODELS, SCHEMA_VERSION, export_schema
+from janus.contracts import CONTRACT_MODELS, SCHEMA_VERSION, check_schema, export_schema
 from janus.memory.models import Observation, ObservationKind
 from janus.memory.store import JanusStore
 
@@ -43,6 +43,11 @@ def test_checked_in_schema_is_consistent_with_the_models() -> None:
         }
         actual_required = set(schema["$defs"][name].get("required", []))
         assert actual_required == expected_required, name
+
+
+def test_schema_check_accepts_the_checked_in_file() -> None:
+    ok, detail = check_schema(ROOT / "schemas" / "janus.schema.json")
+    assert ok, detail
 
 
 def test_observation_required_fields() -> None:

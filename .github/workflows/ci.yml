@@ -1,23 +1,83 @@
-name: ci
+name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  python:
+  lint:
+    name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-        with:
-          version: latest
       - run: uv sync --extra dev
       - run: uv run ruff check .
-      - run: uv run pytest
 
-  dsh-plugin:
+  test:
+    name: test (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --python ${{ matrix.python-version }}
+      - run: uv run pytest -q
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --python 3.12
+      - run: uv run pytest --cov=janus --cov-report=term-missing --cov-fail-under=50
+
+  schema:
+    name: schema and demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev
+      - run: uv run janus schema check
+      - run: uv run janus demo
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev
+      - run: uv build
+      - name: Install the wheel in a clean venv and run the demo
+        run: |
+          python -m venv .venv-smoke
+          .venv-smoke/bin/pip install dist/*.whl
+          .venv-smoke/bin/janus demo
+
+  dsh:
+    name: dsh-plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: dsh-plugin
@@ -28,3 +88,56 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run build
+
+  identity:
+    name: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Commits must be authored and committed by HugoXK
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then base="origin/main"; fi
+          bad=$(git log --no-merges --format='%an <%ae>|%cn <%ce>' "$base"..HEAD \
+            | grep -v '^HugoXK <ke.xu@zju.edu.cn>|HugoXK <ke.xu@zju.edu.cn>$' \
+            | grep -v 'dependabot' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Unexpected commit author or committer:"
+            echo "$bad"
+            exit 1
+          fi
+
+  types:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev
+      - run: uv run mypy core/janus --ignore-missing-imports
+
+  tests-ok:
+    name: tests-ok
+    if: always()
+    needs: [lint, test, coverage, schema, build, dsh, identity, types]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every required job passed
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          SCHEMA: ${{ needs.schema.result }}
+          BUILD: ${{ needs.build.result }}
+          DSH: ${{ needs.dsh.result }}
+          IDENTITY: ${{ needs.identity.result }}
+          TYPES: ${{ needs.types.result }}
+        run: |
+          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH identity=$IDENTITY types=$TYPES"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$IDENTITY" = success ] && [ "$TYPES" = success ]

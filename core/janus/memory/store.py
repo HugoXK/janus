@@ -30,7 +30,12 @@ class JanusStore:
         self.path = str(path)
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA foreign_keys = ON")
         self.init_schema()
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
 
     def init_schema(self) -> None:
         apply_migrations(self._conn)
@@ -117,6 +122,37 @@ class JanusStore:
         sql += " LIMIT ? OFFSET ?"
         params.extend([limit if limit is not None else -1, offset])
         rows = self._conn.execute(sql, params).fetchall()
+        return [self._row_to_observation(row) for row in rows]
+
+    def get_observation(self, observation_id: str) -> Optional[Observation]:
+        row = self._conn.execute(
+            "SELECT * FROM observation WHERE id = ?", (observation_id,)
+        ).fetchone()
+        return self._row_to_observation(row) if row else None
+
+    def search_observations(
+        self,
+        entity_id: str,
+        text: str,
+        as_of: datetime,
+        limit: int = 20,
+    ) -> list[Observation]:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
+        stamp = as_of.isoformat()
+        rows = self._conn.execute(
+            """
+            SELECT * FROM observation
+            WHERE entity_id = ?
+              AND value LIKE ?
+              AND published_at <= ?
+              AND (valid_from IS NULL OR valid_from <= ?)
+              AND (valid_to IS NULL OR valid_to > ?)
+            ORDER BY published_at DESC, id ASC
+            LIMIT ?
+            """,
+            (entity_id, f"%{text}%", stamp, stamp, stamp, limit),
+        ).fetchall()
         return [self._row_to_observation(row) for row in rows]
 
     @staticmethod

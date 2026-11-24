@@ -120,6 +120,35 @@ MIGRATIONS: list[Migration] = [
             ON observation(snapshot_id);
         """,
     ),
+    Migration(
+        version=3,
+        name="entity_graph",
+        sql="""
+        CREATE TABLE IF NOT EXISTS entity (
+            id        TEXT PRIMARY KEY,
+            name      TEXT NOT NULL,
+            ticker    TEXT,
+            cik       TEXT,
+            sector    TEXT,
+            industry  TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_ticker
+            ON entity(ticker) WHERE ticker IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_cik
+            ON entity(cik) WHERE cik IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS entity_alias (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias       TEXT NOT NULL,
+            normalized  TEXT NOT NULL UNIQUE,
+            entity_id   TEXT NOT NULL,
+            source      TEXT NOT NULL,
+            FOREIGN KEY(entity_id) REFERENCES entity(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_entity_alias_entity
+            ON entity_alias(entity_id);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)

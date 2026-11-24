@@ -163,10 +163,12 @@ def load_settings(
     overrides = dict(overrides or {})
 
     default_home = Path(environment.get("JANUS_HOME", Path.home() / ".janus")).expanduser()
-    candidate_config = Path(
-        config_path
-        or environment.get("JANUS_CONFIG", default_home / "config.toml")
-    ).expanduser()
+    config_value = config_path
+    if config_value is None:
+        config_value = Path(
+            environment.get("JANUS_CONFIG", str(default_home / "config.toml"))
+        )
+    candidate_config = config_value.expanduser()
     raw = _load_toml(candidate_config)
 
     def pick(key: str, env_key: str, default: Any) -> Any:

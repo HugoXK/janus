@@ -10,11 +10,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from .memory.models import Observation, Outcome, Persona, Prediction, Review, Thesis
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
-CONTRACT_MODELS = {
+CONTRACT_MODELS: dict[str, type[BaseModel]] = {
     "Observation": Observation,
     "Thesis": Thesis,
     "Prediction": Prediction,
@@ -49,3 +51,44 @@ def write_schema(path: str | Path) -> Path:
 
 def load_schema(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text())
+
+
+def check_schema(path: str | Path) -> tuple[bool, str]:
+    """Check the contract, not the renderer's formatting.
+
+    Pydantic's JSON Schema output changes between minor versions. The checked-in
+    file is valid when the model set, the schema version, and the required
+    fields match the models.
+    """
+
+    try:
+        schema = load_schema(path)
+    except FileNotFoundError:
+        return False, f"missing schema: {path}"
+    except json.JSONDecodeError as exc:
+        return False, f"invalid JSON in {path}: {exc}"
+
+    if schema.get("schema_version") != SCHEMA_VERSION:
+        return (
+            False,
+            f"schema_version {schema.get('schema_version')!r} != {SCHEMA_VERSION}",
+        )
+
+    definitions = schema.get("$defs", {})
+    if set(definitions) != set(CONTRACT_MODELS):
+        return (
+            False,
+            f"models {sorted(definitions)} != {sorted(CONTRACT_MODELS)}",
+        )
+
+    for name, model in CONTRACT_MODELS.items():
+        expected = {
+            field for field, info in model.model_fields.items() if info.is_required()
+        }
+        actual = set(definitions.get(name, {}).get("required", []))
+        if actual != expected:
+            return (
+                False,
+                f"{name} required fields differ: {sorted(actual ^ expected)}",
+            )
+    return True, f"schema ok: {path}"
