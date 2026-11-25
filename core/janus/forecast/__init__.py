@@ -13,15 +13,28 @@ from .calibration_service import (
 )
 from .engine import baseline_direction_probability
 from .ledger import PredictionLedger
+from .registry import (
+    ArtifactCorruptError,
+    ArtifactNotFoundError,
+    FeatureHashMismatchError,
+    ModelArtifact,
+    ModelRegistry,
+    model_ref,
+)
 from .settlement import DirectionOutcomeResolver, SettlementService, direction_label
 
 __all__ = [
+    "ArtifactCorruptError",
+    "ArtifactNotFoundError",
     "CalibrationReport",
     "CalibrationService",
     "DirectionOutcomeResolver",
+    "FeatureHashMismatchError",
     "IsotonicCalibrator",
     "LogisticDirectionModel",
+    "ModelArtifact",
     "ModelCard",
+    "ModelRegistry",
     "PlattCalibrator",
     "PredictionLedger",
     "SettlementService",
@@ -30,5 +43,6 @@ __all__ = [
     "direction_label",
     "expected_calibration_error",
     "log_loss",
+    "model_ref",
     "reliability_curve",
 ]

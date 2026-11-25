@@ -12,6 +12,12 @@ from . import __version__
 from .config import load_settings
 from .contracts import SCHEMA_VERSION, check_schema, write_schema
 from .demo import run_demo
+from .forecast.registry import (
+    ArtifactCorruptError,
+    ArtifactNotFoundError,
+    ModelArtifact,
+    ModelRegistry,
+)
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
@@ -22,8 +28,10 @@ app = typer.Typer(
 )
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
+model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
+app.add_typer(model_app, name="model")
 
 
 @app.command()
@@ -168,6 +176,73 @@ def migrate(
         connection.close()
     action = "would apply" if dry_run else "applied"
     typer.echo(f"{action}: {applied or 'none'}; current version: {version}")
+
+
+@model_app.command("list")
+def model_list(
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List stored model artifacts, oldest first."""
+
+    artifacts = ModelRegistry().list()
+    if as_json:
+        typer.echo(
+            json.dumps(
+                [_artifact_summary(artifact) for artifact in artifacts],
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    for artifact in artifacts:
+        typer.echo(
+            f"{artifact.artifact_id[:12]}  {artifact.version}  "
+            f"{artifact.created_at}  {artifact.features_hash[:12]}"
+        )
+
+
+@model_app.command("show")
+def model_show(
+    ref: str = typer.Argument(
+        ..., help="Artifact id, unique id prefix, or exact version"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show one stored model artifact."""
+
+    try:
+        artifact = ModelRegistry().load(ref)
+    except ArtifactNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    except ArtifactCorruptError as exc:
+        typer.echo(f"artifact corrupt: {exc.path}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if as_json:
+        typer.echo(json.dumps(artifact.to_dict(), indent=2, sort_keys=True))
+        return
+    typer.echo(f"artifact:      {artifact.artifact_id}")
+    typer.echo(f"model:         {artifact.card['name']} {artifact.version}")
+    typer.echo(f"created_at:    {artifact.created_at}")
+    typer.echo(f"features:      {json.dumps(artifact.features, sort_keys=True)}")
+    typer.echo(f"features_hash: {artifact.features_hash}")
+    typer.echo(f"data_snapshot: {artifact.data_snapshot or '-'}")
+    typer.echo(f"code_version:  {artifact.code_version}")
+    typer.echo(f"card:          {json.dumps(artifact.card, sort_keys=True)}")
+
+
+def _artifact_summary(artifact: ModelArtifact) -> dict[str, object]:
+    return {
+        "artifact_id": artifact.artifact_id,
+        "version": artifact.version,
+        "created_at": artifact.created_at,
+        "features_hash": artifact.features_hash,
+        "model": {
+            "name": artifact.card["name"],
+            "version": artifact.card["version"],
+        },
+    }
 
 
 def main() -> None:
