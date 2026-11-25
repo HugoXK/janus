@@ -122,6 +122,42 @@ sentiment, and luck contributions and normalizes them to a share of 1.
 category. Two personas can therefore read the same evidence differently; the
 weights are stored with the `Persona` and are auditable.
 
+## Quantiles and interval coverage
+
+`EmpiricalQuantileModel` turns point-in-time returns into 10/50/90 quantiles.
+It is distribution-free, records the sample size, and scales horizon width by
+`sqrt(horizon)`. `coverage` measures how often outcomes land inside the central
+interval; intervals widen when the supplied return history is more volatile.
+
+## Scenario trees
+
+`generate_scenario_tree` builds deterministic `up` / `base` / `down` branches
+with assumptions, catalysts, risks, falsifiers, and evidence. The numeric
+probabilities sum to one and are validated by `ScenarioTree`; an LLM may enrich
+the narrative later but never owns the numbers. The model is validated by Pydantic and
+can export its own JSON Schema without changing the domain contract version.
+
+## Walk-forward evaluation
+
+`WalkForwardSplitter` creates rolling train/test windows with explicit purge and
+embargo gaps. `WalkForwardBacktester` re-fits the model per fold, reports Brier,
+log loss, accuracy, gross and net returns, and turnover. Costs are reported in
+basis points; no performance number is meaningful without them. Non-monotonic
+timestamps raise `LeakDetected`, and the same inputs produce the same report.
+
+## Counterfactual replay
+
+`CounterfactualReplay` answers "what if we only knew X?" from the prediction's
+`as_of` snapshot. It can remove evidence ids, add observations that were valid
+and published at that time, override feature values, or swap the persona. The
+report keeps the recorded probability separate from the replayed baseline and
+explains the delta. Swapped evidence published after `as_of` raises
+`CounterfactualLeak`; the original evidence list never contains future rows.
+
+```bash
+janus counterfactual <prediction-id> --remove <observation-id> --persona <id>
+```
+
 ## Anti-lookahead rules
 
 1. Every query carries `as_of`.

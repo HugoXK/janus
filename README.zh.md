@@ -97,11 +97,11 @@ Demo 会展示：20 条可见观察、排除一条未来数据、计算 RSI、�
 | 模块 | 现在 | 下一步 |
 | --- | --- | --- |
 | **Memory** | bitemporal 存储、published/observed 模式、快照、实体图、provenance | 去重、保留策略、快照导出 |
-| **Foresight** | 预测账本、baseline logistic 模型、校准服务、settlement | 分位数、情景、model registry |
+| **Foresight** | 预测账本、baseline 模型、校准、settlement、分位数、情景树、model registry、walk-forward 回测 | 自适应模型选择、更丰富数据 |
 | **Analysis** | RSI/MACD/ATR/Bollinger/OBV、宽度、regime、行业 RRG、feature store、dashboard contracts | DSH 面板与完整 UI |
-| **Review** | 复盘与归因 baseline | 反事实重放 |
-| **Taste** | 10 题 profile、大师先验、人设条件证据排序 | 人设进化 |
-| **Interface** | CLI、MCP server、DSH 插件 panel/command descriptors | DSH UI、审批、cron |
+| **Review** | 复盘、归因与反事实重放 | 更丰富的经验提取 |
+| **Taste** | 10 题 profile、大师先验、人设条件排序、校准锦标赛 | AgentDescent 人设进化 |
+| **Interface** | 可脚本化 CLI、JSON API、MCP server、DSH 面板/命令、每日简报 cron、签名分享 | 非对称跨方分享、更完整的审批 UI |
 | **Evaluation** | BeliefBench schema/runner、指标、baselines | 更多 benchmark 与在线任务 |
 | **Data** | Tiingo、yfinance、SEC EDGAR、FRED / ALFRED、GDELT、RSS、scheduler、data quality、cache、blob store | 期权/情绪、中国市场适配 |
 
@@ -233,11 +233,13 @@ core/janus/
   analysis/      指标、宽度、regime、行业
   forecast/      预测账本、校准、baseline
   thesis/        判断跟踪
-  review/        debrief 与归因
-  persona/       profile 向量与大师先验
+  review/        debrief、归因与反事实重放
+  persona/       profile 向量、大师先验与锦标赛
+  share/         审批优先的签名分享
   eval/          BeliefBench 与 walk-forward 骨架
   mcp/           可选 MCP server
-  cli.py         本地 CLI
+  server.py      DSH 插件使用的本地 JSON API
+  cli.py         可脚本化本地 CLI
   demo.py        离线端到端 demo
 
 dsh-plugin/      DSH 插件（TypeScript）：面板、命令、cron
@@ -280,14 +282,18 @@ examples/        离线 demo 入口
 - [x] 复盘与归因 baseline
 - [x] 人设条件证据权重
 - [x] 人设 profile 与大师先验
+- [x] 带 bootstrap 置信区间的人设锦标赛
 - [x] 离线 demo 与测试
-- [ ] 大盘 / 行业 / 个股 DSH UI
-- [ ] 完整预测引擎与情景树
+- [x] 大盘 / 行业 / 个股 DSH UI
+- [x] 分位数 / 区间预测与情景树
+- [x] Model registry 与 walk-forward 回测
+- [ ] 完整预测引擎与自适应模型选择
 - [x] 判断跟踪与复盘 baseline
-- [ ] 反事实重放
+- [x] 反事实重放
+- [x] 审批优先的签名分享与审计日志
 - [x] MCP server v1
 - [x] DSH 插件 panel/command descriptors
-- [ ] DSH UI 与 cron
+- [x] DSH UI 与 cron
 - [x] BeliefBench：lookahead-free 评测
 - [x] 评测指标与 baselines
 - [ ] V1.1：期权 / 情绪特征、AgentDescent 人设进化

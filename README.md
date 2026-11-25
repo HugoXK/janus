@@ -129,6 +129,12 @@ No performance claims yet. The scaffold proves the invariants:
 | Features are point-in-time and hash-addressed | `tests/test_features.py` |
 | Dashboard contracts validate | `tests/test_dashboards.py` |
 | Baseline logistic model and model card | `tests/test_baseline_model.py` |
+| Quantiles, scenario trees, and model replay | `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_model_registry.py` |
+| Walk-forward splits detect leaks and report costs | `tests/test_backtest.py` |
+| Counterfactual replay swaps evidence or persona without future data | `tests/test_counterfactual.py` |
+| Persona tournaments are reproducible and report intervals | `tests/test_persona_tournament.py` |
+| Sharing requires approval, signs the payload, and audits the action | `tests/test_share.py` |
+| CLI commands have help pages, JSON output, and tests | `tests/test_cli.py` |
 | Calibration service (Platt / isotonic) | `tests/test_calibration_service.py` |
 | Settlement resolves direction and prevents double settlement | `tests/test_settlement.py` |
 | Debrief attribution sums to one | `tests/test_debrief.py` |
@@ -151,11 +157,11 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 | Area | Now | Next |
 | --- | --- | --- |
 | **Memory** | Bitemporal store, published/observed modes, snapshots, entity graph, provenance | Dedup, retention, snapshot export |
-| **Foresight** | Prediction ledger, baseline logistic model, calibration service, settlement | Quantiles, scenarios, model registry |
+| **Foresight** | Prediction ledger, baseline model, calibration, settlement, quantiles, scenario trees, model registry, walk-forward backtest | Adaptive model selection, richer data |
 | **Analysis** | RSI/MACD/ATR/Bollinger/OBV, breadth, regime, sector RRG, feature store, dashboard contracts | DSH panels and the full UI |
-| **Review** | Debrief and attribution baseline | Counterfactual replay |
-| **Taste** | 10-question profile, master priors, persona-conditioned evidence ranking | Persona evolution |
-| **Interface** | CLI, MCP server, DSH plugin panel/command descriptors | DSH UI wiring, approvals, cron |
+| **Review** | Debrief, attribution, and counterfactual replay | Richer lesson extraction |
+| **Taste** | 10-question profile, master priors, persona-conditioned ranking, calibration tournament | AgentDescent persona evolution |
+| **Interface** | Scriptable CLI, JSON API, MCP server, DSH dock/panels, commands, daily brief cron, signed sharing | Asymmetric cross-party sharing, richer approval UI |
 | **Evaluation** | BeliefBench schema/runner, metrics, baselines | More benchmarks and live tasks |
 | **Data** | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, GDELT, RSS, scheduler, data quality, cache, blob store | Options/sentiment, China adapters |
 
@@ -276,6 +282,25 @@ This demo is research tooling, not investment advice.
 
 The numbers come from a toy sample. They demonstrate the mechanics, not skill.
 
+## Command-line quickstart
+
+Every read command supports `--json` for scripts and stable keys.
+
+```bash
+janus brief AAPL --json
+janus snapshot AAPL --as-of 2026-01-02T00:00:00+00:00 --out snap.json
+janus forecast list --json
+janus forecast create --thesis-id <id> --probability 0.65 \
+  --model-version logit-v1 --features-hash <hash> --as-of 2026-01-02T00:00:00+00:00
+janus review calibration --json
+janus persona tournament scenarios.json --json
+janus share request --kind forecast --as-of 2026-01-02T00:00:00+00:00 \
+  --snapshot-hash <hash> --payload-file forecast.json
+```
+
+Typer installs shell completion; `janus --install-completion` enables it for the
+current shell. The CLI works without DSH.
+
 ## Data sources
 
 Free by default; paid providers are optional enhancements. Respect every
@@ -303,10 +328,12 @@ core/janus/
   forecast/      prediction ledger, calibration, baseline engine
   thesis/        thesis tracker
   review/        debrief and attribution
-  persona/       profile vector and master priors
+  persona/       profile vector, master priors, tournaments
+  share/         approval-first signed sharing
   eval/          BeliefBench and walk-forward skeleton
   mcp/           optional MCP server
-  cli.py         local CLI
+  server.py      local JSON API for the DSH plugin
+  cli.py         scriptable local CLI
   demo.py        offline end-to-end demo
 
 dsh-plugin/      DSH plugin (TypeScript): panels, commands, cron
@@ -350,14 +377,18 @@ release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 - [x] Debrief and attribution baseline
 - [x] Persona-conditioned evidence weighting
 - [x] Persona profile and master priors
+- [x] Persona tournament with bootstrap intervals
 - [x] Offline demo and tests
-- [ ] DSH UI wiring for market / sector / stock dashboards
-- [ ] Full forecast engine and scenario trees
+- [x] DSH UI wiring for market / sector / stock dashboards
+- [x] Quantile / interval forecasts and scenario trees
+- [x] Model registry and walk-forward backtester
+- [ ] Full forecast engine and adaptive model selection
 - [x] Thesis tracker and debrief baseline
-- [ ] Counterfactual replay
+- [x] Counterfactual replay
+- [x] Approval-first signed sharing with an audit trail
 - [x] MCP server v1
 - [x] DSH plugin panel and command descriptors
-- [ ] DSH UI wiring and cron
+- [x] DSH UI wiring and cron
 - [x] BeliefBench: lookahead-free evaluation
 - [x] Evaluation metrics and baselines
 - [ ] V1.1: options / sentiment features, AgentDescent persona evolution

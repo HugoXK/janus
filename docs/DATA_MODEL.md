@@ -60,6 +60,14 @@ or before the requested time, so a later restatement cannot leak into an earlier
 view. `features_hash` identifies the vector; `source_hash` points at the input
 snapshot.
 
+### `share_request` / `share_audit`
+
+`share_request` stores a pending, approved, or rejected share payload with its
+`as_of`, snapshot hash, requester, approver, and signed envelope. `share_audit`
+is append-only: every request, approval, and rejection records an actor and
+timestamp. Migration v6 adds both tables; model artifacts live in the
+file-backed registry, not in the database.
+
 ### `ingestion_run` / `ingestion_dead_letter`
 
 `ingestion_run` records one scheduler run: source, start/finish, status, counts.

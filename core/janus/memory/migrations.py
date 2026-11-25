@@ -196,6 +196,39 @@ MIGRATIONS: list[Migration] = [
             ON ingestion_dead_letter(source, replayed_at);
         """,
     ),
+    Migration(
+        version=6,
+        name="sharing",
+        sql="""
+        CREATE TABLE IF NOT EXISTS share_request (
+            id             TEXT PRIMARY KEY,
+            kind           TEXT NOT NULL,
+            created_at     TEXT NOT NULL,
+            as_of          TEXT NOT NULL,
+            snapshot_hash  TEXT NOT NULL,
+            payload        TEXT NOT NULL,
+            status         TEXT NOT NULL,
+            requested_by   TEXT NOT NULL,
+            approved_by    TEXT,
+            approved_at    TEXT,
+            envelope       TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_share_request_status
+            ON share_request(status, created_at);
+
+        CREATE TABLE IF NOT EXISTS share_audit (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id  TEXT NOT NULL,
+            action      TEXT NOT NULL,
+            actor       TEXT NOT NULL,
+            at          TEXT NOT NULL,
+            detail      TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(request_id) REFERENCES share_request(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_share_audit_request
+            ON share_audit(request_id, id);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)
