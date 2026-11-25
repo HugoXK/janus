@@ -12,6 +12,7 @@ from . import __version__
 from .config import load_settings
 from .contracts import SCHEMA_VERSION, check_schema, write_schema
 from .demo import run_demo
+from .logging import configure_logging
 from .forecast.registry import (
     ArtifactCorruptError,
     ArtifactNotFoundError,
@@ -32,6 +33,23 @@ model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+
+
+@app.callback()
+def _configure_cli(
+    log_format: str = typer.Option(
+        "text", "--log-format", help="Log format: text or json"
+    ),
+    log_level: str = typer.Option(
+        "INFO", "--log-level", help="DEBUG, INFO, WARNING, ERROR, CRITICAL"
+    ),
+) -> None:
+    """Configure structured logging for every command."""
+
+    try:
+        configure_logging(log_level, log_format)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command()
