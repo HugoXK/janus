@@ -8,6 +8,21 @@ from ..config import load_settings
 from ..memory.store import JanusStore
 from .service import JanusService
 
+def _server_class() -> Any:
+    try:
+        from mcp.server.fastmcp import FastMCP
+
+        return FastMCP
+    except ImportError:
+        try:
+            from mcp.server.mcpserver import MCPServer
+        except ImportError as exc:  # pragma: no cover - optional extra
+            raise RuntimeError(
+                "MCP support is optional. Install it with: uv sync --extra mcp"
+            ) from exc
+        return MCPServer
+
+
 TOOLS = [
     "janus_version",
     "janus_as_of_query",
@@ -33,18 +48,13 @@ def build_server(
     lazy means the core library and CLI work without it.
     """
 
-    try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError as exc:  # pragma: no cover - optional extra
-        raise RuntimeError(
-            "MCP support is optional. Install it with: uv sync --extra mcp"
-        ) from exc
+    server_class = _server_class()
 
     service = JanusService(
         store or JanusStore(load_settings().database),
         scenarios_root=scenarios_root or Path.cwd(),
     )
-    server = FastMCP("janus")
+    server = server_class("janus")
 
     @server.tool()
     def janus_version() -> str:

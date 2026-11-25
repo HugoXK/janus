@@ -9,8 +9,8 @@ uv sync --extra dev --extra mcp
 uv run python -m janus.mcp.server
 ```
 
-The `mcp` extra is pinned to `mcp>=1.0,<2` for v0.1.0 because MCP 2.x renamed
-`FastMCP` to `MCPServer` and changed the server API. v0.2 will support both.
+The `mcp` extra supports MCP 1.x and 2.x. The server uses `FastMCP` on 1.x and
+`MCPServer` on 2.x; CI exercises both.
 
 The default store is the configured SQLite database. Tests inject
 `JanusStore(":memory:")` through `build_server(store)`.

@@ -122,6 +122,18 @@ jobs:
       - run: |
           uv run python -c "from janus.mcp.server import build_server; from janus.memory.store import JanusStore; build_server(JanusStore(':memory:')); print('mcp ok')"
 
+  mcp_v1:
+    name: mcp-v1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --extra mcp
+      - run: uv pip install "mcp<2"
+      - run: |
+          uv run python -c "from janus.mcp.server import build_server; from janus.memory.store import JanusStore; build_server(JanusStore(':memory:')); print('mcp-v1 ok')"
+
   types:
     name: typecheck
     runs-on: ubuntu-latest
@@ -135,7 +147,7 @@ jobs:
   tests-ok:
     name: tests-ok
     if: always()
-    needs: [lint, test, coverage, schema, build, dsh, mcp, identity, types]
+    needs: [lint, test, coverage, schema, build, dsh, mcp, mcp_v1, identity, types]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -148,8 +160,9 @@ jobs:
           BUILD: ${{ needs.build.result }}
           DSH: ${{ needs.dsh.result }}
           MCP: ${{ needs.mcp.result }}
+          MCP_V1: ${{ needs.mcp_v1.result }}
           IDENTITY: ${{ needs.identity.result }}
           TYPES: ${{ needs.types.result }}
         run: |
-          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH mcp=$MCP identity=$IDENTITY types=$TYPES"
-          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$MCP" = success ] && [ "$IDENTITY" = success ] && [ "$TYPES" = success ]
+          echo "lint=$LINT test=$TEST coverage=$COVERAGE schema=$SCHEMA build=$BUILD dsh=$DSH mcp=$MCP mcp_v1=$MCP_V1 identity=$IDENTITY types=$TYPES"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$COVERAGE" = success ] && [ "$SCHEMA" = success ] && [ "$BUILD" = success ] && [ "$DSH" = success ] && [ "$MCP" = success ] && [ "$MCP_V1" = success ] && [ "$IDENTITY" = success ] && [ "$TYPES" = success ]
