@@ -81,6 +81,16 @@ def check_observations(
             if latest_price is None or observation.published_at > latest_price:
                 latest_price = observation.published_at
             close = observation.value.get("close")
+            if close is None:
+                issues.append(
+                    QualityIssue(
+                        code="missing_price",
+                        severity="warning",
+                        message="price observation has no numeric close",
+                        observation_id=observation.id,
+                    )
+                )
+                continue
             try:
                 value = float(close)
             except (TypeError, ValueError):
