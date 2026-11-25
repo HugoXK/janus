@@ -135,6 +135,9 @@ No performance claims yet. The scaffold proves the invariants:
 | Persona weighting changes evidence ranking | `tests/test_persona_weighting.py` |
 | MCP service round-trip | `tests/test_mcp_service.py` |
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
+| GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
+| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -154,7 +157,7 @@ matches a taste profile. The numbers are a smoke test, not a benchmark.
 | **Taste** | 10-question profile, master priors, persona-conditioned evidence ranking | Persona evolution |
 | **Interface** | CLI, MCP server, DSH plugin panel/command descriptors | DSH UI wiring, approvals, cron |
 | **Evaluation** | BeliefBench schema/runner, metrics, baselines | More benchmarks and live tasks |
-| **Data** | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, cache, blob store | GDELT, RSS |
+| **Data** | Tiingo, yfinance, SEC EDGAR, FRED / ALFRED, GDELT, RSS, scheduler, data quality, cache, blob store | Options/sentiment, China adapters |
 
 ## How it works
 
@@ -332,6 +335,10 @@ release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 - [x] Provenance traversal API
 - [x] Review gate, merge gate, and PR workflow
 - [x] Secret scan and release workflows
+- [x] GDELT event ingestion
+- [x] RSS / IR ingestion
+- [x] Ingestion scheduler and dead-letter queue
+- [x] Data quality checks
 - [x] Technical indicator engine
 - [x] Breadth, regime, and sector rotation features
 - [x] Point-in-time feature store
@@ -344,8 +351,6 @@ release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 - [x] Persona-conditioned evidence weighting
 - [x] Persona profile and master priors
 - [x] Offline demo and tests
-- [ ] GDELT event ingestion
-- [ ] RSS / IR ingestion
 - [ ] DSH UI wiring for market / sector / stock dashboards
 - [ ] Full forecast engine and scenario trees
 - [x] Thesis tracker and debrief baseline
