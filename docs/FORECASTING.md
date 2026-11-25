@@ -57,6 +57,42 @@ hyperparameters as well as the coefficients so a run is reproducible. It is a
 baseline, not a trading strategy; there are no transaction costs and no claim of
 alpha.
 
+## Model registry
+
+A forecast must be reproducible months later, so every fitted model can be
+written as a content-addressed artifact. The registry is a local file store, not
+a database table, and adding it required no migration.
+
+- `ModelRegistry()` writes to `$JANUS_HOME/models/<artifact_id>.json` (default
+  `~/.janus/models/`); `JANUS_HOME` redirects the store. Each file is canonical
+  JSON (sorted keys, tight separators) written with an atomic replace.
+- `artifact_id` is the SHA-256 of the canonical JSON of the model card,
+  parameters, feature values and hash, data snapshot, code version, and artifact
+  version. `created_at` is excluded, so saving identical content is idempotent
+  and the id stays stable.
+- `save(model, features=..., data_snapshot=..., code_version=...)` records the
+  fitted parameters and card, computes `features_hash` with
+  `janus.analysis.features.features_hash`, and defaults `version` to the model
+  card's version.
+- `load(ref)` accepts a full 64-hex id, a unique id prefix of at least four
+  characters, or an exact version. A missing or ambiguous reference raises
+  `ArtifactNotFoundError`; an ambiguous one names every candidate id. A file
+  that is not valid JSON or no longer re-hashes to its name raises
+  `ArtifactCorruptError`.
+- `replay(ref, features=...)` rebuilds the model from the artifact and returns
+  the same probability as `predict_one`; supplying a different feature vector
+  raises `FeatureHashMismatchError`.
+- The ledger links a prediction to an artifact through the existing
+  `model_version` column with the convention
+  `<version>@<artifact_id[:12]>` (for example `logit-v1@0123456789ab`).
+  `resolve_prediction(prediction)` loads that artifact and requires the
+  prediction's `features_hash` to match, so a foreign feature snapshot is
+  refused. This is a convention carried in an existing column, not a schema
+  field.
+- `janus model list [--json]` lists artifacts; `janus model show <ref> [--json]`
+  prints one. A missing or corrupt artifact exits 1 with
+  `artifact not found: ...` or `artifact corrupt: ...` on stderr.
+
 ## Calibration service
 
 `CalibrationService` fits Platt scaling or isotonic regression and reports:
