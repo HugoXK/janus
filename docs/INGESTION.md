@@ -12,8 +12,8 @@ publication time.
 | `YFinanceSource` | Yahoo prices | Unofficial fallback |
 | `SECEdgarSource` | Filings and XBRL | Authoritative, as-filed facts |
 | `FREDSource` | Macro series | ALFRED vintages |
-| `GDELTSource` | Global news articles | Noisy, canonical URL dedup |
-| `RSSSource` | RSS 2.0 / Atom | Conditional GET, canonical URL dedup |
+| `GDELTSource` | Global news articles | Noisy, exact-URL dedup |
+| `RSSSource` | RSS 2.0 / Atom | TTL cache, canonical URL dedup |
 
 Adapters return `Observation` objects. They never write to the store directly;
 the scheduler owns persistence.

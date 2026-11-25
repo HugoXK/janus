@@ -83,3 +83,10 @@ def test_stale_feed_is_per_entity() -> None:
     )
     stale_ids = {issue.observation_id for issue in report.warnings if issue.code == "stale_feed"}
     assert stale_ids == {"STALE"}
+
+
+def test_issues_carry_source_and_entity() -> None:
+    report = check_observations([_observation("bad", close=-1)])
+    issue = next(item for item in report.errors if item.code == "non_positive_price")
+    assert issue.source == "test"
+    assert issue.entity_id == "ACME"

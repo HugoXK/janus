@@ -74,7 +74,7 @@ class GDELTSource(DataSource):
             except ValueError:
                 continue
             digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
-            observation_id = f"gdelt:{digest[:24]}"
+            observation_id = f"gdelt:{entity_id}:{digest[:24]}"
             if observation_id in observations:
                 continue
             value = {

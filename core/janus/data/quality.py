@@ -13,6 +13,8 @@ class QualityIssue:
     severity: str
     message: str
     observation_id: str
+    source: str = ""
+    entity_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,8 @@ def check_observations(
                     severity="error",
                     message=f"duplicate observation id {observation.id}",
                     observation_id=observation.id,
+                    source=observation.source,
+                    entity_id=observation.entity_id,
                 )
             )
         seen.add(observation.id)
@@ -64,6 +68,8 @@ def check_observations(
                     severity="error",
                     message="source or raw_hash is missing",
                     observation_id=observation.id,
+                    source=observation.source,
+                    entity_id=observation.entity_id,
                 )
             )
 
@@ -74,6 +80,8 @@ def check_observations(
                     severity="error",
                     message="published_at is after the as-of time",
                     observation_id=observation.id,
+                    source=observation.source,
+                    entity_id=observation.entity_id,
                 )
             )
 
@@ -89,6 +97,8 @@ def check_observations(
                         severity="warning",
                         message="price observation has no numeric close",
                         observation_id=observation.id,
+                        source=observation.source,
+                        entity_id=observation.entity_id,
                     )
                 )
                 continue
@@ -101,6 +111,8 @@ def check_observations(
                         severity="warning",
                         message="price observation has no numeric close",
                         observation_id=observation.id,
+                        source=observation.source,
+                        entity_id=observation.entity_id,
                     )
                 )
                 continue
@@ -111,6 +123,8 @@ def check_observations(
                         severity="error",
                         message=f"close is not positive: {value}",
                         observation_id=observation.id,
+                        source=observation.source,
+                        entity_id=observation.entity_id,
                     )
                 )
 

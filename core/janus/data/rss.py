@@ -116,7 +116,7 @@ class RSSSource(DataSource):
                 if published_at is None or not start <= published_at <= end:
                     continue
                 digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-                observation_id = f"rss:{digest[:24]}"
+                observation_id = f"rss:{entity_id}:{digest[:24]}"
                 value = {
                     "title": _child_text(item, ("title",)),
                     "url": canonical,

@@ -54,3 +54,4 @@ def test_fetch_dedups_and_parses_articles() -> None:
     assert observation.source == "gdelt"
     assert observation.value["title"] == "ACME wins a contract"
     assert observation.published_at == datetime(2026, 1, 2, 12, tzinfo=timezone.utc)
+    assert observation.id.startswith("gdelt:ACME:")
