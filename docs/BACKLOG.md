@@ -342,7 +342,9 @@ underrated. They also duplicate aggressively.
 failures without blocking the whole run.
 
 **Tasks.**
-- Add a scheduler with per-source concurrency limits.
+- Add a scheduler with per-source concurrency limits. *(landed in #73:
+  `IngestionScheduler(max_concurrency=...)`, fetch-only pool, single-writer
+  persistence in input order.)*
 - Add exponential backoff and jitter.
 - Persist failures in a dead-letter table with a replay command.
 - Emit a run report with counts and latency.
