@@ -9,12 +9,13 @@ from janus.memory.models import Observation, ObservationKind
 def _observation(
     obs_id: str = "px-1",
     *,
+    entity_id: str = "ACME",
     close: float = 100.0,
     published_at: datetime | None = None,
 ) -> Observation:
     return Observation(
         id=obs_id,
-        entity_id="ACME",
+        entity_id=entity_id,
         kind=ObservationKind.price,
         source="test",
         published_at=published_at or datetime(2026, 1, 1, tzinfo=timezone.utc),
@@ -62,3 +63,23 @@ def test_stale_feed_is_a_warning() -> None:
         max_age_days=7,
     )
     assert any(issue.code == "stale_feed" for issue in report.warnings)
+
+
+def test_stale_feed_is_per_entity() -> None:
+    fresh = _observation(
+        "fresh",
+        entity_id="FRESH",
+        published_at=datetime(2026, 1, 4, tzinfo=timezone.utc),
+    )
+    stale = _observation(
+        "stale",
+        entity_id="STALE",
+        published_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
+    )
+    report = check_observations(
+        [fresh, stale],
+        as_of=datetime(2026, 1, 5, tzinfo=timezone.utc),
+        max_age_days=7,
+    )
+    stale_ids = {issue.observation_id for issue in report.warnings if issue.code == "stale_feed"}
+    assert stale_ids == {"STALE"}

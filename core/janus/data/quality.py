@@ -43,7 +43,7 @@ def check_observations(
 
     issues: list[QualityIssue] = []
     seen: set[str] = set()
-    latest_price: Optional[datetime] = None
+    latest_prices: dict[str, datetime] = {}
 
     for observation in observations:
         if observation.id in seen:
@@ -78,8 +78,9 @@ def check_observations(
             )
 
         if observation.kind is ObservationKind.price:
-            if latest_price is None or observation.published_at > latest_price:
-                latest_price = observation.published_at
+            previous = latest_prices.get(observation.entity_id)
+            if previous is None or observation.published_at > previous:
+                latest_prices[observation.entity_id] = observation.published_at
             close = observation.value.get("close")
             if close is None:
                 issues.append(
@@ -113,21 +114,20 @@ def check_observations(
                     )
                 )
 
-    if (
-        as_of is not None
-        and latest_price is not None
-        and latest_price < as_of - timedelta(days=max_age_days)
-    ):
-        issues.append(
-            QualityIssue(
-                code="stale_feed",
-                severity="warning",
-                message=(
-                    f"latest price is older than {max_age_days} days "
-                    f"({latest_price.isoformat()})"
-                ),
-                observation_id="",
-            )
-        )
+    if as_of is not None:
+        cutoff = as_of - timedelta(days=max_age_days)
+        for entity_id, latest in latest_prices.items():
+            if latest < cutoff:
+                issues.append(
+                    QualityIssue(
+                        code="stale_feed",
+                        severity="warning",
+                        message=(
+                            f"latest price for {entity_id} is older than "
+                            f"{max_age_days} days ({latest.isoformat()})"
+                        ),
+                        observation_id=entity_id,
+                    )
+                )
 
     return QualityReport(checked=len(observations), issues=tuple(issues))
