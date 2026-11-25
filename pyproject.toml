@@ -51,7 +51,7 @@ select = ["E", "F", "I", "B"]
 ignore = ["E501", "E402", "I001", "B008", "B905"]
 
 [tool.pytest.ini_options]
-pythonpath = ["core"]
+pythonpath = ["core", "."]
 testpaths = ["tests"]
 addopts = "-q"
 

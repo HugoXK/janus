@@ -1,10 +1,13 @@
-.PHONY: install install-hooks test lint format demo clean
+.PHONY: install install-hooks test lint format demo merge-pr clean
 
 install:
 	uv sync --extra dev
 
 install-hooks:
 	./scripts/install-hooks.sh
+
+merge-pr:
+	./scripts/merge-pr.sh $(PR)
 
 test:
 	uv run pytest
