@@ -66,6 +66,16 @@ snapshot.
 `ingestion_dead_letter` records an entity that exhausted its retries; `replay`
 stamps `replayed_at` after a successful retry.
 
+### Model artifacts (files)
+
+Fitted models are not rows. `ModelRegistry` writes one canonical JSON document
+per artifact to `$JANUS_HOME/models/<artifact_id>.json`, named by the SHA-256 of
+its content (`created_at` excluded). The document records the model card and
+parameters, the feature values and hash, the data snapshot, and the code
+version. Predictions reference an artifact through the existing `model_version`
+column using the `version@<artifact_id[:12]>` convention; no table or migration
+is added. See `docs/FORECASTING.md` for replay rules.
+
 ## As-of semantics
 
 There are two questions, and two modes:
