@@ -83,6 +83,9 @@ Janus 是罗马神话里的门神、过渡之神、开端与终结之神，**Jan
 | 人设权重会改变证据排序 | `tests/test_persona_weighting.py` |
 | MCP service 往返 | `tests/test_mcp_service.py` |
 | BeliefBench runner 与 baselines | `tests/test_beliefbench.py` |
+| GDELT / RSS 映射为 observation | `tests/test_gdelt.py`、`tests/test_rss.py` |
+| 重试、dead letter、replay | `tests/test_scheduler.py` |
+| 数据质量检查能抓住重复、未来、过期数据 | `tests/test_quality.py` |
 | 预测不可变，只能结算一次 | `tests/test_ledger.py` |
 | RSI 有界；MACD / Bollinger / OBV 行为正确 | `tests/test_indicators.py` |
 | 离线闭环不需要付费 API，且输出匹配 golden file | `tests/test_demo_golden.py` |
@@ -100,7 +103,7 @@ Demo 会展示：20 条可见观察、排除一条未来数据、计算 RSI、�
 | **Taste** | 10 题 profile、大师先验、人设条件证据排序 | 人设进化 |
 | **Interface** | CLI、MCP server、DSH 插件 panel/command descriptors | DSH UI、审批、cron |
 | **Evaluation** | BeliefBench schema/runner、指标、baselines | 更多 benchmark 与在线任务 |
-| **Data** | Tiingo、yfinance、SEC EDGAR、FRED / ALFRED、cache、blob store | GDELT、RSS |
+| **Data** | Tiingo、yfinance、SEC EDGAR、FRED / ALFRED、GDELT、RSS、scheduler、data quality、cache、blob store | 期权/情绪、中国市场适配 |
 
 ## 它是怎么工作的
 
@@ -262,6 +265,10 @@ examples/        离线 demo 入口
 - [x] Provenance traversal API
 - [x] Review gate、merge gate、PR 流程
 - [x] Secret scan 与 release workflow
+- [x] GDELT 事件摄入
+- [x] RSS / IR 摄入
+- [x] Ingestion scheduler 与 dead-letter queue
+- [x] 数据质量检查
 - [x] 技术指标引擎
 - [x] 宽度、regime、行业轮动特征
 - [x] point-in-time feature store
@@ -274,8 +281,6 @@ examples/        离线 demo 入口
 - [x] 人设条件证据权重
 - [x] 人设 profile 与大师先验
 - [x] 离线 demo 与测试
-- [ ] GDELT 事件摄入
-- [ ] RSS / IR 摄入
 - [ ] 大盘 / 行业 / 个股 DSH UI
 - [ ] 完整预测引擎与情景树
 - [x] 判断跟踪与复盘 baseline

@@ -168,6 +168,34 @@ MIGRATIONS: list[Migration] = [
             ON feature_value(entity_id, as_of);
         """,
     ),
+    Migration(
+        version=5,
+        name="ingestion",
+        sql="""
+        CREATE TABLE IF NOT EXISTS ingestion_run (
+            id          TEXT PRIMARY KEY,
+            source      TEXT NOT NULL,
+            started_at  TEXT NOT NULL,
+            finished_at TEXT,
+            status      TEXT NOT NULL,
+            counts      TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_ingestion_run_source
+            ON ingestion_run(source, started_at);
+
+        CREATE TABLE IF NOT EXISTS ingestion_dead_letter (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id      TEXT NOT NULL,
+            source      TEXT NOT NULL,
+            entity_id   TEXT NOT NULL,
+            error       TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            replayed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_dead_letter_source
+            ON ingestion_dead_letter(source, replayed_at);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)

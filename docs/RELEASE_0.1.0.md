@@ -1,8 +1,7 @@
 # v0.1.0 release plan
 
-**Status:** PR #1 (data foundation), PR #2 (analysis, feature store, dashboard
-contracts), and PR #3 (forecast, calibration, review, persona) are merged.
-PR #4 (MCP, DSH descriptors, BeliefBench) is in review.
+**Status:** v0.1.0 is released. v0.1.1 is in progress: process hardening is
+merged; the data spine (GDELT/RSS, scheduler, data quality) is in review.
 
 ## Goal
 

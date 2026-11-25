@@ -20,7 +20,7 @@ from .analysis.dashboards import (
 )
 from .memory.models import Observation, Outcome, Persona, Prediction, Review, Thesis
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 CONTRACT_MODELS: dict[str, type[BaseModel]] = {
     "Observation": Observation,

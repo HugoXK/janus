@@ -5,7 +5,7 @@ at the requested `as_of` time.**
 
 ## Schema version and migrations
 
-- `SCHEMA_VERSION` lives in `core/janus/contracts.py`; currently `4`.
+- `SCHEMA_VERSION` lives in `core/janus/contracts.py`; currently `5`.
 - `schemas/janus.schema.json` is the checked-in contract. `janus schema check`
   fails if it drifts from the Pydantic models.
 - Migrations live in `core/janus/memory/migrations.py`. The `schema_migrations`
@@ -59,6 +59,12 @@ Point-in-time materialized features. The primary key is
 or before the requested time, so a later restatement cannot leak into an earlier
 view. `features_hash` identifies the vector; `source_hash` points at the input
 snapshot.
+
+### `ingestion_run` / `ingestion_dead_letter`
+
+`ingestion_run` records one scheduler run: source, start/finish, status, counts.
+`ingestion_dead_letter` records an entity that exhausted its retries; `replay`
+stamps `replayed_at` after a successful retry.
 
 ## As-of semantics
 
