@@ -52,19 +52,25 @@ def evaluate() -> tuple[bool, str]:
     for review in reviews:
         latest[review["user"]["login"]] = review
     approval = latest.get(reviewer)
-    if approval and approval.get("state") == "APPROVED":
+    if (
+        approval
+        and approval.get("state") == "APPROVED"
+        and approval.get("commit_id") == head
+    ):
         return True, f"{reviewer} approved {head[:7]}"
 
     comments = _api(f"/issues/{pr_number}/comments?per_page=100")
     for comment in comments:
         if comment["user"]["login"] != reviewer:
             continue
-        if "PASS" in (comment.get("body") or "").upper():
-            return True, f"{reviewer} left a PASS comment on #{pr_number}"
+        body = (comment.get("body") or "").upper()
+        if "PASS" in body and head[:7].upper() in body:
+            return True, f"{reviewer} left a PASS comment on {head[:7]}"
 
     return (
         False,
-        f"waiting for an approving review or a PASS comment from {reviewer} on {head[:7]}",
+        f"waiting for an APPROVED review on {head[:7]} or a "
+        f"'PASS {head[:7]}' comment from {reviewer}",
     )
 
 

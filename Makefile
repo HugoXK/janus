@@ -1,7 +1,10 @@
-.PHONY: install test lint format demo clean
+.PHONY: install install-hooks test lint format demo clean
 
 install:
 	uv sync --extra dev
+
+install-hooks:
+	./scripts/install-hooks.sh
 
 test:
 	uv run pytest
