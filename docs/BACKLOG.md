@@ -12,8 +12,9 @@ JAN-008, JAN-009, JAN-010, JAN-015, JAN-016, JAN-019, JAN-023, JAN-024, JAN-025,
 JAN-027, JAN-028, JAN-031 (tracker #39 / JAN-074), JAN-033, JAN-034, JAN-035,
 JAN-037, JAN-040, JAN-041,
 JAN-045, JAN-046, JAN-047, JAN-048, JAN-049, JAN-050, JAN-058, JAN-059,
-JAN-060, and JAN-061 are implemented. JAN-042 has the command/panel descriptors;
-DSH UI wiring and cron are deferred to v0.2. See `schemas/janus.schema.json`,
+JAN-060, and JAN-061 are implemented. JAN-022 is implemented. JAN-042 has the
+command/panel descriptors; DSH UI wiring and cron are deferred to v0.2. See
+`schemas/janus.schema.json`,
 `tests/test_contracts.py`,
 `tests/test_migrations.py`, `tests/test_config.py`,
 `tests/test_asof_hypothesis.py`, `tests/test_tiingo.py`,
