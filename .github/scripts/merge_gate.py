@@ -18,12 +18,16 @@ def main() -> None:
     pull = _api(f"/pulls/{pr_number}")
     head = pull["head"]["sha"]
     checks = _api(f"/commits/{head}/check-runs?per_page=100")
-    runs = checks.get("check_runs", [])
-    tests_ok = any(
-        run.get("name") == "tests-ok"
-        and run.get("status") == "completed"
-        and run.get("conclusion") == "success"
-        for run in runs
+    runs = [run for run in checks.get("check_runs", []) if run.get("name") == "tests-ok"]
+    latest = max(
+        runs,
+        key=lambda run: str(run.get("completed_at") or run.get("started_at") or ""),
+        default=None,
+    )
+    tests_ok = (
+        latest is not None
+        and latest.get("status") == "completed"
+        and latest.get("conclusion") == "success"
     )
     if not tests_ok:
         print(f"tests-ok is not green on {head[:7]}")

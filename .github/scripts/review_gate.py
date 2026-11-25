@@ -49,7 +49,7 @@ def evaluate() -> tuple[bool, str]:
 
     reviews = _api(f"/pulls/{pr_number}/reviews?per_page=100")
     latest: dict[str, dict] = {}
-    for review in reviews:
+    for review in sorted(reviews, key=lambda item: str(item.get("submitted_at") or "")):
         latest[review["user"]["login"]] = review
     approval = latest.get(reviewer)
     if (

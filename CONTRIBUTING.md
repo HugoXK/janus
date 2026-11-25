@@ -22,6 +22,13 @@ uv run janus demo
 - **Free by default.** The core loop must run without a paid API.
 - **Small surfaces.** Prefer a narrow, testable module over a large framework.
 
+## Merging
+
+Use `make merge-pr PR=<number>` (or `scripts/merge-pr.sh <number>`). It selects
+the latest run per required check for the PR head and refuses to merge unless
+`tests-ok`, `review-gate`, and `merge-gate` are green. Do not use `gh pr merge`
+directly.
+
 ## Pull requests
 
 - Never push directly to `main`; every change goes through a PR.
