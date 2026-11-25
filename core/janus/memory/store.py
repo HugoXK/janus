@@ -28,7 +28,7 @@ class JanusStore:
 
     def __init__(self, path: Union[str, Path] = ":memory:") -> None:
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self.init_schema()

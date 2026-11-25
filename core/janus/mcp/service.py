@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..analysis.dashboards import build_stock_dashboard
+from ..analysis.feature_store import FeatureStore
 from ..eval.baselines import ConstantBaseline, RandomBaseline
 from ..eval.beliefbench import BeliefBench, Scenario, ScenarioResult
 from ..forecast.calibration_service import CalibrationService
@@ -165,6 +168,153 @@ class JanusService:
 
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
+
+    def persona_tournament(
+        self,
+        scenarios_path: str,
+        *,
+        seed: int = 7,
+        bootstrap: int = 1000,
+        confidence: float = 0.95,
+    ) -> dict[str, Any]:
+        from ..persona.tournament import PersonaTournament
+
+        path = Path(scenarios_path).resolve()
+        if self.scenarios_root is not None:
+            root = self.scenarios_root.resolve()
+            if path != root and root not in path.parents:
+                raise ValueError("scenario path is outside the configured root")
+        tournament = PersonaTournament.load(path)
+        report = tournament.run(
+            self.store.list_personas(),
+            seed=seed,
+            bootstrap=bootstrap,
+            confidence=confidence,
+        )
+        return report.to_dict()
+
+    def counterfactual_replay(
+        self,
+        *,
+        prediction_id: str,
+        remove_evidence: Optional[list[str]] = None,
+        persona_id: Optional[str] = None,
+        feature_overrides: Optional[dict[str, float]] = None,
+    ) -> dict[str, Any]:
+        from ..review.counterfactual import CounterfactualReplay
+
+        report = CounterfactualReplay(self.store).replay(
+            prediction_id,
+            remove_evidence=remove_evidence or [],
+            persona_id=persona_id,
+            feature_overrides=feature_overrides,
+        )
+        return report.to_dict()
+
+    def brief(
+        self,
+        entity_id: str,
+        as_of: str | datetime | None = None,
+        *,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        stamp = _parse_time(as_of) if as_of is not None else datetime.now(timezone.utc)
+        observations = (
+            self.as_of_query(entity_id, stamp, limit=limit) if entity_id else []
+        )
+        return {
+            "as_of": stamp.isoformat(),
+            "entity_id": entity_id,
+            "calibration": self.calibrate(),
+            "theses": self.list_theses(),
+            "forecasts": self.list_forecasts(),
+            "observations": observations,
+            "sector": {"status": "not_materialized"},
+        }
+
+    def snapshot(
+        self, entity_id: str, as_of: str | datetime
+    ) -> dict[str, Any]:
+        stamp = _parse_time(as_of)
+        observations = self.as_of_query(entity_id, stamp)
+        payload = {
+            "entity_id": entity_id,
+            "as_of": stamp.isoformat(),
+            "observations": observations,
+        }
+        canonical = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), default=str
+        )
+        return {
+            **payload,
+            "count": len(observations),
+            "snapshot_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        }
+
+    def scenario_tree(
+        self,
+        *,
+        entity_id: str,
+        horizon: str,
+        as_of: str | datetime,
+        direction_probability: float,
+        volatility: float = 0.02,
+        trend: float = 0.0,
+        evidence: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        from ..forecast.scenarios import generate_scenario_tree
+
+        tree = generate_scenario_tree(
+            entity_id=entity_id,
+            horizon=horizon,
+            as_of=_parse_time(as_of),
+            direction_probability=direction_probability,
+            volatility=volatility,
+            trend=trend,
+            evidence=evidence,
+        )
+        return _dump(tree)
+
+    def quantile_forecast(
+        self, returns: list[float], *, horizon: int = 1
+    ) -> dict[str, Any]:
+        from ..forecast.quantiles import EmpiricalQuantileModel
+
+        forecast = EmpiricalQuantileModel().fit(returns).predict(horizon=horizon)
+        return {**asdict(forecast), "width": forecast.width}
+
+    def list_models(self) -> list[dict[str, Any]]:
+        from ..forecast.registry import ModelRegistry
+
+        return [artifact.to_dict() for artifact in ModelRegistry().list()]
+
+    def show_model(self, artifact_id: str) -> dict[str, Any]:
+        from ..forecast.registry import ModelRegistry
+
+        return ModelRegistry().load(artifact_id).to_dict()
+
+    def stock_dashboard(
+        self, entity_id: str, as_of: str | datetime
+    ) -> Optional[dict[str, Any]]:
+        """Build the stock panel from the latest feature materialization.
+
+        Returns ``None`` when no features exist at or before ``as_of``; the
+        transport layer turns that into an explicit ``not_materialized``
+        payload rather than a zeroed dashboard.
+        """
+
+        snapshot = FeatureStore(self.store).snapshot(entity_id, _parse_time(as_of))
+        if snapshot is None:
+            return None
+        features = snapshot["features"]
+        dashboard = build_stock_dashboard(
+            as_of=datetime.fromisoformat(snapshot["as_of"]),
+            entity_id=entity_id,
+            close=float(features.get("close", 0.0)),
+            features=features,
+            features_hash=snapshot["features_hash"],
+        )
+        return _dump(dashboard)
 
     def beliefbench(
         self, scenarios_path: str, baseline: str = "always_up"

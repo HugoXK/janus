@@ -17,7 +17,7 @@ point-in-time memory, the prediction ledger, and the calibration loop.
 
 | Layer | Language | Responsibility |
 | --- | --- | --- |
-| Shell | TypeScript (DSH plugin) | Panels, commands, cron, approvals, chat |
+| Shell | TypeScript (DSH plugin) | Panels, commands, cron, chat |
 | Contract | MCP | Tool and resource boundary between shell and core |
 | Core | Python | Data, memory, analysis, forecast, review, persona |
 | Storage | SQLite (V1) → Postgres (later) | Point-in-time observations, theses, predictions, outcomes |
@@ -58,11 +58,13 @@ core/janus/
   analysis/      indicators, breadth, regime, sector
   forecast/      ledger, calibration, baseline engine
   thesis/        thesis tracker
-  review/        debrief and attribution
-  persona/       profile vector and master priors
+  review/        debrief, attribution, counterfactual replay
+  persona/       profile vector, master priors, tournaments
+  share/         approval-first signed sharing
   eval/          BeliefBench and walk-forward skeleton
   mcp/           optional MCP server
-  cli.py         local CLI
+  server.py      local JSON API for the DSH plugin
+  cli.py         scriptable local CLI
   demo.py        offline end-to-end demo
 ```
 
