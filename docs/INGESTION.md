@@ -23,7 +23,7 @@ the scheduler owns persistence.
 ```python
 from janus.data import GDELTSource, IngestionScheduler
 
-result = IngestionScheduler(store, retries=3).run(
+result = IngestionScheduler(store, retries=3, max_concurrency=4).run(
     GDELTSource(),
     ["ACME", "BETA"],
     start,
@@ -32,10 +32,23 @@ result = IngestionScheduler(store, retries=3).run(
 print(result.fetched, result.stored, result.failed, result.dead_letters)
 ```
 
-- Retries use exponential backoff.
+- `max_concurrency` bounds how many `source.fetch` calls run at once and
+  defaults to `1`, which keeps the sequential path. Values below 1 are rejected
+  by the constructor.
+- Only fetching is pooled. Every store write happens on the thread that called
+  `run`, after collection, in input entity order, because the SQLite connection
+  is single-threaded. Row order and dead-letter order therefore never depend on
+  which fetch finishes first; a pooled run holds one run's observations in
+  memory until collection ends.
+- Persistence still commits row by row on one connection, so a higher limit
+  shortens wall time only as far as fetching is the bottleneck. It is a bound on
+  in-flight provider calls, not a throughput promise.
+- Retries use exponential backoff, and an entity's attempts stay sequential
+  even when other entities fetch in parallel.
 - Exhausted entities go to `ingestion_dead_letter`; `replay` retries them and
   stamps `replayed_at`.
-- `ingestion_run` records status and counts for each run.
+- `ingestion_run` records status and counts for each run. A failing entity makes
+  the status `partial`; a store error still aborts the run.
 
 ## Quality checks
 
