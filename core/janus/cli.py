@@ -11,6 +11,7 @@ import typer
 from . import __version__
 from .config import load_settings
 from .contracts import SCHEMA_VERSION, check_schema, write_schema
+from .data.blob import LocalBlobStore
 from .demo import run_demo
 from .forecast.registry import (
     ArtifactCorruptError,
@@ -29,9 +30,11 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+blob_app = typer.Typer(help="Inspect and garbage-collect content-addressed blobs.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(blob_app, name="blob")
 
 
 @app.command()
@@ -157,6 +160,46 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+def _blob_root(root: Optional[Path]) -> Path:
+    return Path(root) if root is not None else load_settings().home / "blobs"
+
+
+@blob_app.command("metrics")
+def blob_metrics(
+    root: Optional[Path] = typer.Option(None, "--root", help="Blob store root"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show blob count and bytes on disk."""
+
+    metrics = LocalBlobStore(_blob_root(root)).metrics()
+    if as_json:
+        typer.echo(json.dumps(metrics, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"blobs={metrics['blobs']} bytes={metrics['bytes']}")
+
+
+@blob_app.command("gc")
+def blob_gc(
+    root: Optional[Path] = typer.Option(None, "--root", help="Blob store root"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report without deleting"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Delete blobs that no observation references."""
+
+    settings = load_settings()
+    result = LocalBlobStore(_blob_root(root)).gc(
+        JanusStore(db or settings.database), dry_run=dry_run
+    )
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"scanned={result.scanned} kept={result.kept} "
+            f"deleted={result.deleted} bytes_freed={result.bytes_freed}"
+        )
 
 
 @app.command()
