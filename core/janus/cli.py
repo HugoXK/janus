@@ -19,6 +19,12 @@ from .forecast.registry import (
     ModelRegistry,
 )
 from .memory.migrations import apply_migrations, current_version
+from .memory.retention import (
+    RetentionPolicy,
+    RetentionRule,
+    apply_retention,
+    export_redacted,
+)
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
 
@@ -29,9 +35,11 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+retention_app = typer.Typer(help="Apply retention and export redacted data.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(retention_app, name="retention")
 
 
 @app.command()
@@ -157,6 +165,83 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+def _retention_rule(value: str) -> RetentionRule:
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise typer.BadParameter("rules use SOURCE:KIND:DAYS, e.g. rss:news:30")
+    source, kind, days = parts
+    try:
+        return RetentionRule(source=source, kind=kind, max_age_days=int(days))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@retention_app.command("apply")
+def retention_apply(
+    as_of: str = typer.Option(..., "--as-of", help="Retention cutoff timestamp"),
+    rule: Optional[list[str]] = typer.Option(
+        None, "--rule", help="SOURCE:KIND:DAYS (repeatable)"
+    ),
+    default_days: Optional[int] = typer.Option(
+        None, "--default-days", help="Fallback max age for unmatched rows"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report without deleting"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Delete observations whose retention window has expired."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    policy = RetentionPolicy(
+        rules=tuple(_retention_rule(item) for item in (rule or [])),
+        default_max_age_days=default_days,
+    )
+    settings = load_settings()
+    result = apply_retention(
+        JanusStore(db or settings.database),
+        as_of=stamp,
+        policy=policy,
+        dry_run=dry_run,
+    )
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"scanned={result.scanned} deleted={result.deleted} kept={result.kept}"
+        )
+
+
+@retention_app.command("export")
+def retention_export(
+    entity: str = typer.Argument(..., help="Entity id"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    out: Path = typer.Option(..., "--out", help="JSONL output path"),
+    field: Optional[list[str]] = typer.Option(
+        None, "--field", help="Field name to redact (repeatable)"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Export one entity's as-of observations with selected fields redacted."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    settings = load_settings()
+    rows = JanusStore(db or settings.database).query_observations_as_of(
+        entity, stamp, mode="published"
+    )
+    target = export_redacted(rows, out, fields=field or [])
+    typer.echo(f"wrote {len(rows)} redacted observation(s) to {target}")
 
 
 @app.command()

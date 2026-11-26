@@ -76,6 +76,14 @@ version. Predictions reference an artifact through the existing `model_version`
 column using the `version@<artifact_id[:12]>` convention; no table or migration
 is added. See `docs/FORECASTING.md` for replay rules.
 
+## Retention and redaction
+
+`core/janus/memory/retention.py` applies source/kind retention windows and
+deletes only observations whose expiration is at or before `as_of`; a dry run
+reports the same counts without writing. `redact_value` masks named fields at
+any depth, and `export_redacted` writes JSONL without mutating stored facts.
+The CLI exposes `janus retention apply` and `janus retention export`.
+
 ## As-of semantics
 
 There are two questions, and two modes:
