@@ -76,6 +76,15 @@ version. Predictions reference an artifact through the existing `model_version`
 column using the `version@<artifact_id[:12]>` convention; no table or migration
 is added. See `docs/FORECASTING.md` for replay rules.
 
+## Snapshot archives
+
+`core/janus/memory/snapshot_archive.py` exports an as-of freeze as
+`manifest.json` plus `observations.json` and `features.json` (and Parquet when
+an optional writer is available). The manifest records row counts, per-file
+SHA-256 hashes, lineage, and a content hash. `verify_snapshot` detects tampering
+or missing files before `import_snapshot` writes into a fresh store. The CLI
+exposes `janus archive export/verify/import`.
+
 ## As-of semantics
 
 There are two questions, and two modes:
