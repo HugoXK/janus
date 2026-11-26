@@ -49,6 +49,16 @@ feature_store.history("AAPL", "rsi_14")
 
 These models are part of `CONTRACT_MODELS` and the exported JSON Schema.
 
+## Fundamentals and events
+
+`core/janus/analysis/fundamentals.py` turns as-filed SEC facts into revenue,
+margin, cash-flow, leverage, growth, EPS, PE, and book-value features. Only
+facts published at or before `as_of` participate; a later restatement is visible
+only to later views. Every feature carries the observation ids that produced it,
+and missing inputs are listed explicitly. `detect_events` maps filing/news text
+to earnings, M&A, litigation, insider, and guidance flags with the supporting
+observation ids.
+
 ## Regime baseline
 
 `classify_regime` is a rule-based baseline:
