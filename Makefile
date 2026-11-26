@@ -1,4 +1,4 @@
-.PHONY: install install-hooks test lint format demo merge-pr clean
+.PHONY: install install-hooks test lint format demo merge-pr release release-image clean
 
 install:
 	uv sync --extra dev
@@ -28,6 +28,14 @@ format:
 
 demo:
 	uv run janus demo
+
+release:
+	python3 scripts/release.py --root .
+	uv build
+	cd dsh-plugin && npm pack --pack-destination ../dist
+
+release-image:
+	docker build -t janus:local .
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build *.egg-info
