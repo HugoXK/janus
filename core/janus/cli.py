@@ -21,6 +21,7 @@ from .forecast.registry import (
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
+from .review.report import build_research_report
 
 app = typer.Typer(
     add_completion=False,
@@ -157,6 +158,39 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def report(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    out: Optional[Path] = typer.Option(None, "--out", help="Write Markdown to a file"),
+    limit: int = typer.Option(50, "--limit", help="Maximum evidence rows"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Build a deterministic as-of research report."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    settings = load_settings()
+    result = build_research_report(
+        JanusStore(db or settings.database), entity, stamp, limit=limit
+    )
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True, default=str))
+        return
+    markdown = result.to_markdown()
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown)
+        typer.echo(f"wrote {out}")
+    else:
+        typer.echo(markdown, nl=False)
 
 
 @app.command()
