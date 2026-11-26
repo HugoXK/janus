@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from .store import JanusStore
 
@@ -19,12 +19,25 @@ class Entity:
     sector: Optional[str] = None
     industry: Optional[str] = None
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "ticker": self.ticker,
+            "cik": self.cik,
+            "sector": self.sector,
+            "industry": self.industry,
+        }
+
 
 @dataclass(frozen=True)
 class EntityAlias:
     alias: str
     entity_id: str
     source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"alias": self.alias, "entity_id": self.entity_id, "source": self.source}
 
 
 class EntityGraph:
@@ -89,6 +102,14 @@ class EntityGraph:
             (normalize_alias(alias),),
         ).fetchone()
         return self._row_to_entity(row) if row else None
+
+    def list(self, limit: int = 200) -> list[Entity]:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
+        rows = self.store.connection.execute(
+            "SELECT * FROM entity ORDER BY id LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._row_to_entity(row) for row in rows]
 
     def aliases(self, entity_id: str) -> list[EntityAlias]:
         rows = self.store.connection.execute(

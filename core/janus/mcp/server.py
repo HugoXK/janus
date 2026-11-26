@@ -33,6 +33,9 @@ TOOLS = [
     "janus_forecast_settle",
     "janus_review_debrief",
     "janus_calibrate",
+    "janus_entity_resolve",
+    "janus_entity_show",
+    "janus_entity_list",
     "janus_persona_list",
     "janus_beliefbench_run",
 ]
@@ -182,6 +185,25 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    def janus_entity_resolve(alias: str) -> dict[str, Any]:
+        """Resolve a ticker, CIK, or name alias to one entity."""
+        return service.resolve_entity(alias)
+
+    @server.tool()
+    def janus_entity_show(entity_id: str) -> dict[str, Any]:
+        """Show an entity with all aliases."""
+        return service.get_entity(entity_id)
+
+    @server.tool()
+    def janus_entity_list(limit: int = 200) -> list[dict[str, Any]]:
+        """List entities in the graph."""
+        return service.list_entities(limit)
+
+    @server.resource("janus://entities")
+    def entities_resource() -> str:
+        return json.dumps(service.list_entities(), default=str)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:

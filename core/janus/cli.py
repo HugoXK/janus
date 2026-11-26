@@ -18,6 +18,7 @@ from .forecast.registry import (
     ModelArtifact,
     ModelRegistry,
 )
+from .memory.entities import EntityGraph
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
@@ -29,9 +30,11 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+entity_app = typer.Typer(help="Resolve and inspect the entity graph.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(entity_app, name="entity")
 
 
 @app.command()
@@ -157,6 +160,74 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+@entity_app.command("resolve")
+def entity_resolve(
+    alias: str = typer.Argument(..., help="Ticker, CIK, or name alias"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve an alias to one entity."""
+
+    settings = load_settings()
+    entity = EntityGraph(JanusStore(db or settings.database)).resolve(alias)
+    if entity is None:
+        typer.echo(f"entity not found: {alias}", err=True)
+        raise typer.Exit(code=1)
+    if as_json:
+        typer.echo(json.dumps(entity.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{entity.id} {entity.name} ticker={entity.ticker or '-'} "
+            f"cik={entity.cik or '-'}"
+        )
+
+
+@entity_app.command("show")
+def entity_show(
+    entity_id: str = typer.Argument(..., help="Entity id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show an entity and its aliases."""
+
+    settings = load_settings()
+    graph = EntityGraph(JanusStore(db or settings.database))
+    entity = graph.get(entity_id)
+    if entity is None:
+        typer.echo(f"entity not found: {entity_id}", err=True)
+        raise typer.Exit(code=1)
+    payload = {
+        **entity.to_dict(),
+        "aliases": [alias.to_dict() for alias in graph.aliases(entity_id)],
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"{entity.id} {entity.name}")
+        for alias in payload["aliases"]:
+            typer.echo(f"- {alias['alias']} ({alias['source']})")
+
+
+@entity_app.command("list")
+def entity_list(
+    limit: int = typer.Option(200, "--limit", help="Maximum entities"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List entities in the graph."""
+
+    settings = load_settings()
+    entities = EntityGraph(JanusStore(db or settings.database)).list(limit)
+    payload = [entity.to_dict() for entity in entities]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    elif not payload:
+        typer.echo("no entities")
+    else:
+        for entity in payload:
+            typer.echo(f"{entity['id']} {entity['name']} ticker={entity['ticker'] or '-'}")
 
 
 @app.command()
