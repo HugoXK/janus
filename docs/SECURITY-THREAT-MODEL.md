@@ -3,8 +3,8 @@
 Janus is local-first research software. It does not execute trades, holds no
 broker credentials, and has no network service listening for inbound
 connections. This document covers the three surfaces that do exist — the MCP
-boundary, local data at rest, and the (unshipped) sharing/approval surface —
-and states honestly which controls are live today.
+boundary, local data at rest, and the sharing/approval surface — and states
+honestly which controls are live today.
 
 **Status vocabulary.** Every row uses exactly one of:
 
@@ -15,9 +15,9 @@ and states honestly which controls are live today.
 
 `Status` reflects the code at the base this document was written against
 (`12cd78c0`). A planned control is never described as preventing anything.
-If a later change ships the sharing surface (see JAN-043 and
-`docs/ARCHITECTURE.md:30`), this document must be updated against that code
-before it is merged, not against the branch that adds it.
+The sharing surface is a baseline HMAC implementation (JAN-043): approval is
+explicit, the envelope is signed, and decisions are audited. It is not a
+cross-party asymmetric identity system.
 
 ## Surface: MCP tools and resources
 
@@ -75,40 +75,28 @@ and raw source documents may be cached on disk by `data/cache.py` and
 
 ## Surface: sharing and approvals
 
-**This surface does not exist at this base.** There is no `core/janus/share/`
-package, no approval object, no signed bundle and no verification code.
-`docs/ARCHITECTURE.md:30` says the shell "Reuses FlyBot and bot-social for
-scheduling, approvals, and sharing", and `docs/BACKLOG.md` lists JAN-043
-"Approvals and signed sharing" as M4/P1 — both are plans, not shipped behaviour. Until that
-work lands, the only sharing control is that nothing is shared by Janus.
+`core/janus/share/` implements an approval-first baseline. A share request is
+created as `pending`, carries its `as_of` and snapshot hash, and returns an
+`ApprovalCard`. Approval signs a canonical envelope with HMAC-SHA256, records
+an append-only `share_audit` row, and stores the envelope. Verification checks
+the signature, payload hash, key id, and format. The CLI exposes
+`janus share request|approve|reject|list|verify`; the secret comes from
+`JANUS_SHARE_SECRET` and is never stored in the repository.
 
 | Threat | Impact | Mitigation | Status | Residual risk |
 | --- | --- | --- | --- | --- |
-| A shared bundle is modified in transit or at rest | The recipient reasons over forged history | None; no bundle format or signature exists yet | not implemented | Any future unauthenticated bundle format would be trivially forgeable |
-| Sender or recipient identity is spoofed | A recipient trusts a bundle from the wrong party | None; no identity binding exists yet | not implemented | — |
-| An old, previously valid bundle is replayed | Stale or withdrawn forecasts are presented as current | None; no nonce, expiry, or sequence number exists yet | not implemented | — |
-| An approval is bypassed by writing the store directly | A change that should need sign-off is applied anyway | None; there is no approval flow and no write barrier | not implemented | The approval surface, when built, must not rely on UI-only gating |
-| Sharing leaks licensed data or provider keys | Terms-of-service breach or credential leak | None; nothing is shared | planned | Sharing must filter provider payloads and secrets by construction |
+| A shared bundle is modified in transit or at rest | The recipient reasons over forged history | Canonical payload hash plus HMAC-SHA256 signature checked by `ShareSigner.verify` | implemented | Symmetric HMAC is only as strong as secret distribution |
+| Sender or recipient identity is spoofed | A recipient trusts a bundle from the wrong party | Envelope carries `identity.key_id`; verifier requires the expected key id | partial | No asymmetric key or published identity binding |
+| An old, previously valid bundle is replayed | Stale or withdrawn forecasts are presented as current | None; envelopes carry `as_of` but no nonce, expiry, or sequence number | not implemented | A captured envelope remains valid until the key rotates |
+| An approval is bypassed by writing the store directly | A change that should need sign-off is applied anyway | The CLI/API path requires a pending request and explicit approval; the audit trail records the decision | partial | Direct SQLite writes are still possible for the same OS user |
+| Sharing leaks licensed data or provider keys | Terms-of-service breach or credential leak | `ShareService` refuses empty snapshot hashes; callers choose the payload | not implemented | There is no automatic provider-field/secret filter yet |
 
 **Open risks — sharing and approvals**
 
-- Approvals and signed sharing are **not implemented**. No signature is a live
-  control on this base, and no planned sharing feature may be described as one.
-- When the surface lands it must ship signature verification, sender/recipient
-  identity binding, and replay protection together with tests; any one missing
-  leaves the others decorative.
-- The MCP boundary and the sharing boundary must not share an implicit trust
-  channel: a bundle received from another party is untrusted input.
-
-## Cross-cutting controls
-
-| Control | Where | Status | Note |
-| --- | --- | --- | --- |
-| Secret scanning | `gitleaks`, `.github/workflows/security.yml:15-25` | implemented | Blocking; runs on push to `main` and on pull requests |
-| Dependency audit | `pip-audit`, `.github/workflows/security.yml:27-35` | partial | Advisory only (`continue-on-error: true`); it cannot fail a pull request |
-| Component inventory | `scripts/generate_sbom.py`, advisory `sbom` job | partial | CycloneDX 1.5 subset; Python entries are declared constraints, not resolved versions, because there is no lockfile |
-| Dependency updates | `.github/dependabot.yml` | implemented | Weekly for pip, npm and GitHub Actions; `open-pull-requests-limit: 5` per ecosystem is a ceiling, not the current count |
-| Static analysis / fuzzing | — | not implemented | No SAST, and no fuzzing focused on the security surfaces |
-| Reproducible builds | — | not implemented | No lockfile for Python and no build attestation |
-
-The dependency policy behind this table is in `SECURITY.md`.
+- The HMAC signer is a local baseline, not a cross-party identity system. Do not
+  describe a verified envelope as proof of a remote human identity.
+- Replay protection, expiry, and revocation are not implemented.
+- The audit trail is local and append-only by convention; it is not a
+  tamper-evident ledger.
+- Any future asymmetric signer must keep the same envelope fields and update
+  this document in the same change.

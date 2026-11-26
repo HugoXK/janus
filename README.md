@@ -137,6 +137,7 @@ No performance claims yet. The scaffold proves the invariants:
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Sharing needs approval, signs the payload, and audits the decision | `tests/test_share.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
