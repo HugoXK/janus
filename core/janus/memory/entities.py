@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from .store import JanusStore
 
@@ -111,7 +111,7 @@ class EntityGraph:
         ).fetchall()
         return [self._row_to_entity(row) for row in rows]
 
-    def aliases(self, entity_id: str) -> list[EntityAlias]:
+    def aliases(self, entity_id: str) -> List[EntityAlias]:
         rows = self.store.connection.execute(
             "SELECT alias, entity_id, source FROM entity_alias WHERE entity_id = ? ORDER BY alias",
             (entity_id,),
