@@ -94,14 +94,15 @@ class JanusStore:
 
     @property
     def connection(self) -> sqlite3.Connection:
-        return self._conn
+        return self._conn  # type: ignore[return-value]
 
     def init_schema(self) -> None:
-        apply_migrations(self._conn)
+        apply_migrations(self._conn)  # type: ignore[arg-type]
 
     @property
     def schema_version(self) -> int:
-        return current_version(self._conn)
+        with self._lock:
+            return current_version(self._conn)  # type: ignore[arg-type]
 
     def close(self) -> None:
         self._conn.close()
