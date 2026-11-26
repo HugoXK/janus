@@ -13,7 +13,6 @@ from janus.logging import (
     configure_logging,
     correlation_scope,
     current_correlation,
-    log_event,
     redact,
 )
 from janus.memory.store import JanusStore

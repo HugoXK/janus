@@ -114,7 +114,10 @@ class IngestionScheduler:
             source=source.name,
             status=status,
             as_of=end.isoformat(),
-            **counts,
+            fetched=counts["fetched"],
+            stored=counts["stored"],
+            failed=counts["failed"],
+            dead_letters=counts["dead_letters"],
         )
         return IngestionResult(
             run_id=run_id,

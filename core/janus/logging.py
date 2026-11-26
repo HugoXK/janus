@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from typing import Any, Iterator, Mapping, Optional
 
 LOGGER_NAME = "janus"
-_CORRELATION: ContextVar[dict[str, Any]] = ContextVar("janus_correlation", default={})
+_CORRELATION: ContextVar[dict[str, Any] | None] = ContextVar(
+    "janus_correlation", default=None
+)
 _SENSITIVE_MARKERS = (
     "secret",
     "token",
@@ -44,7 +46,7 @@ def redact(value: Any, *, key: Optional[str] = None) -> Any:
 
 
 def current_correlation() -> dict[str, Any]:
-    return dict(_CORRELATION.get())
+    return dict(_CORRELATION.get() or {})
 
 
 @contextmanager
