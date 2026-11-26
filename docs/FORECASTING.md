@@ -122,6 +122,27 @@ sentiment, and luck contributions and normalizes them to a share of 1.
 category. Two personas can therefore read the same evidence differently; the
 weights are stored with the `Persona` and are auditable.
 
+## Persona tournament
+
+`PersonaTournament` runs every stored persona over the same fixed scenario set,
+so a result cannot be cherry-picked from a favorable subset. It reports Brier,
+log loss, ECE, hit rate, and max drawdown by persona, with deterministic
+bootstrap intervals. The report always includes the scenario count, persona
+count, seed, and bootstrap size.
+
+## Counterfactual replay
+
+`CounterfactualReplay` answers "what if we only knew X?" from the prediction's
+`as_of` snapshot. It can remove evidence ids, add observations that were valid
+and published at that time, override feature values, or swap the persona. The
+report keeps the recorded probability separate from the replayed baseline and
+explains the delta. Swapped evidence published after `as_of` raises
+`CounterfactualLeak`; the original evidence list never contains future rows.
+
+```bash
+janus counterfactual <prediction-id> --remove <observation-id> --persona <id>
+```
+
 ## Anti-lookahead rules
 
 1. Every query carries `as_of`.
