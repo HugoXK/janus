@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
 import threading
@@ -64,6 +65,15 @@ class _LockedConnection:
 
     def __getattr__(self, name: str):
         return getattr(self._connection, name)
+
+
+def _synchronized(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class JanusStore:
@@ -497,3 +507,8 @@ class JanusStore:
             lessons=row["lessons"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
+
+
+for _method_name, _method in list(vars(JanusStore).items()):
+    if callable(_method) and not _method_name.startswith("_"):
+        setattr(JanusStore, _method_name, _synchronized(_method))
