@@ -163,6 +163,19 @@ class JanusService:
     def calibrate(self) -> dict[str, Any]:
         return asdict(CalibrationService.from_store(self.store))
 
+    def provenance_trace(self, observation_id: str) -> dict[str, Any]:
+        from ..memory.provenance import ProvenanceTracer
+
+        return ProvenanceTracer(self.store).require(observation_id).to_dict()
+
+    def provenance_catalog(self, limit: int = 200) -> list[dict[str, Any]]:
+        from ..memory.provenance import ProvenanceTracer
+
+        return [
+            provenance.to_dict()
+            for provenance in ProvenanceTracer(self.store).catalog(limit)
+        ]
+
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 

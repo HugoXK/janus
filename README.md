@@ -120,7 +120,7 @@ No performance claims yet. The scaffold proves the invariants:
 | As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
 | Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
 | Entity graph resolves ticker, CIK, and names | `tests/test_entities.py` |
-| Provenance trace and as-of search | `tests/test_provenance.py` |
+| Provenance trace, catalog, CLI, MCP tool, and as-of search | `tests/test_provenance.py` |
 | yfinance maps adjusted close | `tests/test_yfinance.py` |
 | FRED latest and ALFRED vintage | `tests/test_fred.py` |
 | SEC restatement keeps the as-filed fact | `tests/test_sec_edgar.py` |

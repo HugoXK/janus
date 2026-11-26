@@ -35,6 +35,7 @@ TOOLS = [
     "janus_calibrate",
     "janus_persona_list",
     "janus_beliefbench_run",
+    "janus_provenance_trace",
 ]
 
 
@@ -182,6 +183,15 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    def janus_provenance_trace(observation_id: str) -> dict[str, Any]:
+        """Resolve an observation to its citation and source span."""
+        return service.provenance_trace(observation_id)
+
+    @server.resource("janus://provenance")
+    def provenance_resource() -> str:
+        return json.dumps(service.provenance_catalog(), default=str)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:
