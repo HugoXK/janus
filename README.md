@@ -137,6 +137,7 @@ No performance claims yet. The scaffold proves the invariants:
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Local JSON API publishes an OpenAPI contract | `tests/test_server.py` |
 | DSH dock/cron reads the local JSON panel API | `tests/test_server.py` |
 | Shared SQLite access is serialized across worker threads | `tests/test_store_threading.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |

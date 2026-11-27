@@ -133,6 +133,16 @@ def test_unknown_panel_is_404(base_url) -> None:
     assert excinfo.value.code == 404
 
 
+def test_openapi_contract_lists_panel_routes(base_url) -> None:
+    payload = _get(f"{base_url}/openapi.json")
+    assert payload["openapi"] == "3.1.0"
+    assert "/api/panels/stock" in payload["paths"]
+    assert "bearerAuth" in payload["components"]["securitySchemes"]
+    assert payload["paths"]["/api/panels/stock"]["get"]["security"] == [
+        {"bearerAuth": []}
+    ]
+
+
 def test_token_protects_api_but_not_health() -> None:
     store = JanusStore(":memory:")
     server = make_server(store, port=0, token="secret")

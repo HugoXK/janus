@@ -49,6 +49,7 @@ plugin. It is read-only:
 | Route | Payload |
 | --- | --- |
 | `GET /health` | Version and schema version |
+| `GET /openapi.json` | OpenAPI 3.1 contract for the local API |
 | `GET /api/as_of` | Observations knowable at `as_of` |
 | `GET /api/theses` | Theses and falsifiers |
 | `GET /api/forecasts` | Forecast ledger |

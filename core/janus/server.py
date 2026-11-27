@@ -8,6 +8,7 @@ from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
+from .api_schema import openapi_document
 from .config import load_settings
 from .contracts import SCHEMA_VERSION
 from .mcp.service import JanusService
@@ -105,6 +106,9 @@ class JanusHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
         try:
+            if parsed.path == "/openapi.json":
+                self._json(200, openapi_document())
+                return
             if parsed.path == "/health":
                 self._json(
                     200,
