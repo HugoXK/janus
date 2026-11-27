@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -19,6 +21,61 @@ from .models import (
 )
 
 
+class _LockedConnection:
+    """Serialize one SQLite connection across HTTP worker threads."""
+
+    def __init__(self, connection: sqlite3.Connection, lock: threading.RLock) -> None:
+        self._connection = connection
+        self._lock = lock
+
+    def execute(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.executemany(*args, **kwargs)
+
+    def executescript(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.executescript(*args, **kwargs)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._connection.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
+
+    def __enter__(self):
+        self._lock.acquire()
+        try:
+            self._connection.__enter__()
+        except BaseException:
+            self._lock.release()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return self._connection.__exit__(exc_type, exc, tb)
+        finally:
+            self._lock.release()
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+
+def _synchronized(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class JanusStore:
     """SQLite-backed point-in-time store.
 
@@ -28,21 +85,24 @@ class JanusStore:
 
     def __init__(self, path: Union[str, Path] = ":memory:") -> None:
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._lock = threading.RLock()
+        raw = sqlite3.connect(self.path, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA foreign_keys = ON")
+        self._conn = _LockedConnection(raw, self._lock)
         self.init_schema()
 
     @property
     def connection(self) -> sqlite3.Connection:
-        return self._conn
+        return self._conn  # type: ignore[return-value]
 
     def init_schema(self) -> None:
-        apply_migrations(self._conn)
+        apply_migrations(self._conn)  # type: ignore[arg-type]
 
     @property
     def schema_version(self) -> int:
-        return current_version(self._conn)
+        with self._lock:
+            return current_version(self._conn)  # type: ignore[arg-type]
 
     def close(self) -> None:
         self._conn.close()
@@ -448,3 +508,8 @@ class JanusStore:
             lessons=row["lessons"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
+
+
+for _method_name, _method in list(vars(JanusStore).items()):
+    if callable(_method) and not _method_name.startswith("_"):
+        setattr(JanusStore, _method_name, _synchronized(_method))
