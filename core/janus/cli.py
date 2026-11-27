@@ -29,9 +29,11 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+persona_app = typer.Typer(help="Inspect personas and run calibration tournaments.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(persona_app, name="persona")
 
 
 @app.command()
@@ -157,6 +159,138 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def counterfactual(
+    prediction_id: str = typer.Argument(..., help="Prediction id to replay"),
+    remove: Optional[list[str]] = typer.Option(
+        None, "--remove", help="Evidence observation id to exclude (repeatable)"
+    ),
+    persona: Optional[str] = typer.Option(
+        None, "--persona", help="Counterfactual persona id"
+    ),
+    overrides: Optional[str] = typer.Option(
+        None, "--overrides", help="JSON feature overrides, e.g. '{\"rsi_14\": 30}'"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Replay a decision with swapped evidence or persona."""
+
+    from .review.counterfactual import CounterfactualReplay
+
+    parsed: dict[str, float] = {}
+    if overrides:
+        try:
+            parsed = {
+                str(key): float(value)
+                for key, value in json.loads(overrides).items()
+            }
+        except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
+            raise typer.BadParameter(
+                "overrides must be a JSON object of numbers"
+            ) from exc
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    try:
+        report = CounterfactualReplay(store).replay(
+            prediction_id,
+            remove_evidence=remove or [],
+            persona_id=persona,
+            feature_overrides=parsed,
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = report.to_dict()
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    typer.echo(
+        f"{payload['prediction_id']} as_of={payload['as_of']} "
+        f"delta={payload['delta']:+.3f}"
+    )
+    typer.echo(
+        f"original: {payload['original']['probability']:.3f} "
+        f"({payload['original']['reasoning']})"
+    )
+    typer.echo(
+        f"counterfactual: {payload['counterfactual']['probability']:.3f} "
+        f"({payload['counterfactual']['reasoning']})"
+    )
+    typer.echo(payload["explanation"])
+
+
+@persona_app.command("list")
+def persona_list(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List stored personas and their weights."""
+
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    personas = [
+        {
+            "id": persona.id,
+            "name": persona.name,
+            "version": persona.version,
+            "weights": persona.weights,
+        }
+        for persona in store.list_personas()
+    ]
+    if as_json:
+        typer.echo(json.dumps(personas, indent=2, sort_keys=True))
+    elif not personas:
+        typer.echo("no personas")
+    else:
+        for persona in personas:
+            typer.echo(f"{persona['id']} {persona['name']} ({persona['version']})")
+
+
+@persona_app.command("tournament")
+def persona_tournament(
+    scenarios: Path = typer.Argument(..., help="Tournament scenario JSON"),
+    seed: int = typer.Option(7, "--seed", help="Bootstrap seed"),
+    bootstrap: int = typer.Option(1000, "--bootstrap", help="Bootstrap resamples"),
+    confidence: float = typer.Option(0.95, "--confidence", help="Interval confidence"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Compare every stored persona on the same fixed scenario set."""
+
+    from .persona.tournament import PersonaTournament
+
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    try:
+        report = PersonaTournament.load(scenarios).run(
+            store.list_personas(),
+            seed=seed,
+            bootstrap=bootstrap,
+            confidence=confidence,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = report.to_dict()
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    typer.echo(
+        f"{payload['n_scenarios']} scenarios, {len(payload['personas'])} personas, "
+        f"seed={payload['seed']}, bootstrap={payload['bootstrap']}"
+    )
+    for result in payload["personas"]:
+        drawdown = (
+            f"{result['max_drawdown']:.3f}"
+            if result["max_drawdown"] is not None
+            else "-"
+        )
+        typer.echo(
+            f"{result['name']}: brier={result['brier']:.3f} "
+            f"[{result['brier_ci'][0]:.3f}, {result['brier_ci'][1]:.3f}] "
+            f"hit={result['hit_rate']:.3f} drawdown={drawdown}"
+        )
 
 
 @app.command()

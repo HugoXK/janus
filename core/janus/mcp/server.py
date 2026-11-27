@@ -35,6 +35,8 @@ TOOLS = [
     "janus_calibrate",
     "janus_persona_list",
     "janus_beliefbench_run",
+    "janus_counterfactual_replay",
+    "janus_persona_tournament",
 ]
 
 
@@ -182,6 +184,36 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    def janus_counterfactual_replay(
+        prediction_id: str,
+        remove_evidence: Optional[list[str]] = None,
+        persona_id: Optional[str] = None,
+        feature_overrides: Optional[dict[str, float]] = None,
+    ) -> dict[str, Any]:
+        """Replay a decision with swapped evidence or persona."""
+        return service.counterfactual_replay(
+            prediction_id=prediction_id,
+            remove_evidence=remove_evidence,
+            persona_id=persona_id,
+            feature_overrides=feature_overrides,
+        )
+
+    @server.tool()
+    def janus_persona_tournament(
+        scenarios_path: str,
+        seed: int = 7,
+        bootstrap: int = 1000,
+        confidence: float = 0.95,
+    ) -> dict[str, Any]:
+        """Compare all stored personas on one fixed scenario set."""
+        return service.persona_tournament(
+            scenarios_path,
+            seed=seed,
+            bootstrap=bootstrap,
+            confidence=confidence,
+        )
 
     @server.resource("janus://theses")
     def theses_resource() -> str:

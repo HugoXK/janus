@@ -166,6 +166,48 @@ class JanusService:
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 
+    def persona_tournament(
+        self,
+        scenarios_path: str,
+        *,
+        seed: int = 7,
+        bootstrap: int = 1000,
+        confidence: float = 0.95,
+    ) -> dict[str, Any]:
+        from ..persona.tournament import PersonaTournament
+
+        path = Path(scenarios_path).resolve()
+        if self.scenarios_root is not None:
+            root = self.scenarios_root.resolve()
+            if path != root and root not in path.parents:
+                raise ValueError("scenario path is outside the configured root")
+        tournament = PersonaTournament.load(path)
+        report = tournament.run(
+            self.store.list_personas(),
+            seed=seed,
+            bootstrap=bootstrap,
+            confidence=confidence,
+        )
+        return report.to_dict()
+
+    def counterfactual_replay(
+        self,
+        *,
+        prediction_id: str,
+        remove_evidence: Optional[list[str]] = None,
+        persona_id: Optional[str] = None,
+        feature_overrides: Optional[dict[str, float]] = None,
+    ) -> dict[str, Any]:
+        from ..review.counterfactual import CounterfactualReplay
+
+        report = CounterfactualReplay(self.store).replay(
+            prediction_id,
+            remove_evidence=remove_evidence or [],
+            persona_id=persona_id,
+            feature_overrides=feature_overrides,
+        )
+        return report.to_dict()
+
     def beliefbench(
         self, scenarios_path: str, baseline: str = "always_up"
     ) -> dict[str, Any]:

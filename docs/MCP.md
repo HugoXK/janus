@@ -29,6 +29,8 @@ The default store is the configured SQLite database. Tests inject
 | `janus_calibrate` | Calibration report over settled predictions |
 | `janus_persona_list` | List stored personas and weights |
 | `janus_beliefbench_run` | Run a baseline over a scenario file |
+| `janus_counterfactual_replay` | Replay a prediction with swapped evidence or persona |
+| `janus_persona_tournament` | Compare all personas on one fixed scenario set |
 
 ## Resources
 
