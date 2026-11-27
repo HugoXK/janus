@@ -20,7 +20,7 @@ from .forecast.registry import (
     ModelRegistry,
 )
 from .memory.migrations import apply_migrations, current_version
-from .memory.models import Observation, ObservationKind
+from .memory.models import ObservationKind
 from .memory.store import JanusStore
 
 app = typer.Typer(
