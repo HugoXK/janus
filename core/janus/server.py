@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hmac
 import json
+import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 from . import __version__
 from .api_schema import openapi_document
@@ -84,9 +87,38 @@ def _fixture(panel: str) -> dict[str, Any]:
     return dashboard.model_dump(mode="json")
 
 
+class _Metrics:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._started = time.monotonic()
+        self.requests = 0
+        self.errors = 0
+        self.by_path: dict[str, int] = {}
+
+    def record(self, path: str) -> None:
+        with self._lock:
+            self.requests += 1
+            self.by_path[path] = self.by_path.get(path, 0) + 1
+
+    def record_error(self) -> None:
+        with self._lock:
+            self.errors += 1
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "requests": self.requests,
+                "errors": self.errors,
+                "by_path": dict(sorted(self.by_path.items())),
+                "uptime_seconds": round(time.monotonic() - self._started, 3),
+            }
+
+
 class JanusHandler(BaseHTTPRequestHandler):
     service: JanusService
     token: Optional[str] = None
+    metrics: _Metrics = _Metrics()
+    request_id: str = ""
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
@@ -105,9 +137,14 @@ class JanusHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         params = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+        self.request_id = self.headers.get("X-Request-ID") or uuid4().hex
+        self.metrics.record(parsed.path)
         try:
             if parsed.path == "/openapi.json":
                 self._json(200, openapi_document())
+                return
+            if parsed.path == "/metrics":
+                self._json(200, self.metrics.snapshot())
                 return
             if parsed.path == "/health":
                 self._json(
@@ -200,6 +237,7 @@ class JanusHandler(BaseHTTPRequestHandler):
                 return
             self._json(404, {"error": "not_found", "path": parsed.path})
         except Exception as exc:  # noqa: BLE001 - local HTTP boundary
+            self.metrics.record_error()
             self._json(400, {"error": type(exc).__name__, "message": str(exc)})
 
     def _json(self, status: int, payload: Any) -> None:
@@ -208,6 +246,8 @@ class JanusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
+        if self.request_id:
+            self.send_header("X-Request-ID", self.request_id)
         self.end_headers()
         self.wfile.write(body)
 
@@ -224,7 +264,9 @@ def make_server(
 ) -> ThreadingHTTPServer:
     service = JanusService(store or JanusStore(load_settings().database))
     handler = type(
-        "BoundJanusHandler", (JanusHandler,), {"service": service, "token": token}
+        "BoundJanusHandler",
+        (JanusHandler,),
+        {"service": service, "token": token, "metrics": _Metrics()},
     )
     return ThreadingHTTPServer((host, port), handler)
 

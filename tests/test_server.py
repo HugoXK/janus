@@ -159,3 +159,14 @@ def test_token_protects_api_but_not_health() -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_metrics_and_request_id(base_url) -> None:
+    request = urllib.request.Request(f"{base_url}/metrics")
+    request.add_header("X-Request-ID", "req-123")
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.loads(response.read().decode())
+        assert response.headers["X-Request-ID"] == "req-123"
+    assert payload["requests"] >= 1
+    assert payload["by_path"]["/metrics"] >= 1
+    assert payload["uptime_seconds"] >= 0
