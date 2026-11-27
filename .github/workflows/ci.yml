@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv run ruff check .
 
@@ -34,7 +34,7 @@ jobs:
         python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev --python ${{ matrix.python-version }}
       - run: uv run pytest -q
 
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev --python 3.12
       - run: uv run pytest --cov=janus --cov-report=term-missing --cov-fail-under=50
 
@@ -54,7 +54,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv run janus schema check
       - run: uv run janus demo
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv build
       - name: Install the wheel in a clean venv and run the demo
@@ -87,6 +87,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - run: npm run check
+      - run: npm test
       - run: npm run build
 
   identity:
@@ -117,7 +119,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev --extra mcp
       - run: |
           uv run python -c "from janus.mcp.server import build_server; from janus.memory.store import JanusStore; build_server(JanusStore(':memory:')); print('mcp ok')"
@@ -128,7 +130,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev --extra mcp
       - run: uv pip install "mcp<2"
       - run: |
@@ -140,7 +142,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv run mypy core/janus --ignore-missing-imports
 
