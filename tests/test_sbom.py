@@ -26,8 +26,10 @@ What stays a **deliberate tripwire**, and must not be "fixed" into a derived che
   ordering, and the rule that every lockfile entry appears exactly once. These are what
   the test exists to defend; `_npm_problems` returns violations and the test asserts an
   empty list, and `test_npm_checker_*` proves each kind of violation still trips.
-* `test_identity_tracks_content` keeps its literal `5.9.3` -> `5.9.4` fixture: it is a
-  synthetic rebuild of one entry, and pinning it is the point of that case.
+* `test_identity_tracks_content` writes its own synthetic lockfile in `tmp_path` and
+  bumps that file's single `typescript` entry `5.9.3` -> `5.9.4`. No assertion in that
+  case reads the repository's real lockfile, so a legitimate dependabot bump cannot red
+  it (#81).
 """
 
 from __future__ import annotations
@@ -393,11 +395,34 @@ def test_generator_imports_stay_inside_the_stdlib_allowlist() -> None:
 # AC5 -----------------------------------------------------------------------
 
 
+SYNTHETIC_NPM_LOCK: dict[str, Any] = {
+    "name": "dsh-plugin",
+    "version": "0.0.0",
+    "lockfileVersion": 3,
+    "requires": True,
+    "packages": {
+        "": {"name": "dsh-plugin", "version": "0.0.0"},
+        "node_modules/typescript": {
+            "name": "typescript",
+            "version": "5.9.3",
+            "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+            "integrity": "sha512-synthetic-fixture",
+        },
+    },
+}
+
+
 def _copy_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    """A real pyproject plus a fully synthetic npm lockfile.
+
+    The Python half intentionally tracks the repository manifest; the npm half must not
+    track the repository lockfile, or a legitimate dependabot bump would red this case
+    (#81). The synthetic lockfile carries exactly one `typescript` entry to bump.
+    """
     pyproject = tmp_path / "pyproject.toml"
     lock = tmp_path / "package-lock.json"
     pyproject.write_bytes(PYPROJECT.read_bytes())
-    lock.write_bytes(LOCK.read_bytes())
+    lock.write_text(json.dumps(SYNTHETIC_NPM_LOCK, indent=2) + "\n", encoding="utf-8")
     return pyproject, lock
 
 
