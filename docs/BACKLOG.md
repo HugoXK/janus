@@ -14,6 +14,8 @@ JAN-037, JAN-040, JAN-041,
 JAN-045, JAN-046, JAN-047, JAN-048, JAN-049, JAN-050, JAN-058, JAN-059,
 JAN-060, and JAN-061 are implemented. JAN-022 is implemented. JAN-042 has the
 command/panel descriptors; DSH UI wiring and cron are deferred to v0.2. See
+JAN-060, and JAN-061 are implemented. JAN-041 and JAN-042 are implemented: DSH
+dock/panels, commands, HTTP panel API, and daily brief cron. See
 `schemas/janus.schema.json`,
 `tests/test_contracts.py`,
 `tests/test_migrations.py`, `tests/test_config.py`,
@@ -26,7 +28,7 @@ command/panel descriptors; DSH UI wiring and cron are deferred to v0.2. See
 `tests/test_debrief.py`, `tests/test_persona_weighting.py`,
 `tests/test_mcp_service.py`, `tests/test_beliefbench.py`,
 `tests/test_gdelt.py`, `tests/test_rss.py`, `tests/test_scheduler.py`,
-`tests/test_quality.py`, and `tests/test_copy.py`.
+`tests/test_quality.py`, `tests/test_server.py`, and `tests/test_copy.py`.
 
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
   memory, M2 analysis, M3 forecast and review, M4 interface, M5 evaluation and

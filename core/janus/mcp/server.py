@@ -33,6 +33,8 @@ TOOLS = [
     "janus_forecast_settle",
     "janus_review_debrief",
     "janus_calibrate",
+    "janus_security_resolve",
+    "janus_universe_members",
     "janus_persona_list",
     "janus_beliefbench_run",
 ]
@@ -182,6 +184,18 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    def janus_security_resolve(
+        symbol: str, as_of: str, exchange: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Resolve a symbol to its security master row at an as-of time."""
+        return service.security_resolve(symbol, as_of, exchange=exchange)
+
+    @server.tool()
+    def janus_universe_members(universe: str, as_of: str) -> list[dict[str, Any]]:
+        """Return the point-in-time members of a universe."""
+        return service.universe_members(universe, as_of)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..analysis.dashboards import build_stock_dashboard
+from ..analysis.feature_store import FeatureStore
 from ..eval.baselines import ConstantBaseline, RandomBaseline
 from ..eval.beliefbench import BeliefBench, Scenario, ScenarioResult
 from ..forecast.calibration_service import CalibrationService
@@ -163,8 +166,100 @@ class JanusService:
     def calibrate(self) -> dict[str, Any]:
         return asdict(CalibrationService.from_store(self.store))
 
+    def security_resolve(
+        self, symbol: str, as_of: str | datetime, *, exchange: Optional[str] = None
+    ) -> dict[str, Any]:
+        from ..memory.security_master import SecurityMaster
+
+        security = SecurityMaster(self.store).resolve(
+            symbol, _parse_time(as_of), exchange=exchange
+        )
+        if security is None:
+            raise KeyError(f"security not found: {symbol}")
+        return security.to_dict()
+
+    def security_history(self, symbol: str) -> list[dict[str, Any]]:
+        from ..memory.security_master import SecurityMaster
+
+        return [item.to_dict() for item in SecurityMaster(self.store).history(symbol)]
+
+    def universe_members(
+        self, universe: str, as_of: str | datetime
+    ) -> list[dict[str, Any]]:
+        from ..memory.security_master import SecurityMaster
+
+        return [
+            item.to_dict()
+            for item in SecurityMaster(self.store).members(
+                universe, _parse_time(as_of)
+            )
+        ]
+
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
+
+    def brief(
+        self,
+        entity_id: str,
+        as_of: str | datetime | None = None,
+        *,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        stamp = _parse_time(as_of) if as_of is not None else datetime.now(timezone.utc)
+        observations = (
+            self.as_of_query(entity_id, stamp, limit=limit) if entity_id else []
+        )
+        return {
+            "as_of": stamp.isoformat(),
+            "entity_id": entity_id,
+            "calibration": self.calibrate(),
+            "theses": self.list_theses(),
+            "forecasts": self.list_forecasts(),
+            "observations": observations,
+            "sector": {"status": "not_materialized"},
+        }
+
+    def snapshot(
+        self, entity_id: str, as_of: str | datetime
+    ) -> dict[str, Any]:
+        stamp = _parse_time(as_of)
+        observations = self.as_of_query(entity_id, stamp)
+        payload = {
+            "entity_id": entity_id,
+            "as_of": stamp.isoformat(),
+            "observations": observations,
+        }
+        canonical = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), default=str
+        )
+        return {
+            **payload,
+            "count": len(observations),
+            "snapshot_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        }
+
+    def stock_dashboard(
+        self, entity_id: str, as_of: str | datetime
+    ) -> Optional[dict[str, Any]]:
+        """Build the stock panel from the latest feature materialization.
+
+        Returns ``None`` when no features exist at or before ``as_of``; the
+        transport layer turns that into an explicit ``not_materialized``
+        payload rather than a zeroed dashboard.
+        """
+
+        snapshot = FeatureStore(self.store).snapshot(entity_id, _parse_time(as_of))
+        if snapshot is None:
+            return None
+        features = snapshot["features"]
+        dashboard = build_stock_dashboard(
+            as_of=datetime.fromisoformat(snapshot["as_of"]),
+            entity_id=entity_id,
+            close=float(features.get("close", 0.0)),
+            features=features,
+            features_hash=snapshot["features_hash"],
+        )
+        return _dump(dashboard)
 
     def beliefbench(
         self, scenarios_path: str, baseline: str = "always_up"
