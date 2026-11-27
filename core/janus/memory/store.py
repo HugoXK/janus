@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import json
+from contextlib import contextmanager
 import sqlite3
 import threading
 from datetime import datetime
@@ -98,6 +99,13 @@ class JanusStore:
 
     def init_schema(self) -> None:
         apply_migrations(self._conn)  # type: ignore[arg-type]
+
+    @contextmanager
+    def locked(self):
+        """Hold the store lock for a multi-statement read or transaction."""
+
+        with self._lock:
+            yield self
 
     @property
     def schema_version(self) -> int:
@@ -511,5 +519,9 @@ class JanusStore:
 
 
 for _method_name, _method in list(vars(JanusStore).items()):
-    if callable(_method) and not _method_name.startswith("_"):
+    if (
+        callable(_method)
+        and not _method_name.startswith("_")
+        and _method_name != "locked"
+    ):
         setattr(JanusStore, _method_name, _synchronized(_method))
