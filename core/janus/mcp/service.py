@@ -195,6 +195,28 @@ class JanusService:
             )
         ]
 
+    def corporate_actions(
+        self, security_id: Optional[str] = None, as_of: Optional[str | datetime] = None
+    ) -> list[dict[str, Any]]:
+        from ..memory.corporate_actions import CorporateActionLedger
+
+        stamp = _parse_time(as_of) if as_of is not None else None
+        return [
+            action.to_dict()
+            for action in CorporateActionLedger(self.store).list(
+                security_id, as_of=stamp
+            )
+        ]
+
+    def adjust_price(
+        self, security_id: str, raw_price: float, as_of: str | datetime
+    ) -> dict[str, Any]:
+        from ..memory.corporate_actions import CorporateActionLedger
+
+        return CorporateActionLedger(self.store).adjust_price(
+            security_id, raw_price, _parse_time(as_of)
+        )
+
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 
