@@ -214,6 +214,20 @@ class JanusService:
             security_id, raw_price, _parse_time(as_of)
         )
 
+    def source_spans(self, observation_id: str) -> list[dict[str, Any]]:
+        from ..memory.spans import SpanStore
+
+        return [span.to_dict() for span in SpanStore(self.store).list(observation_id)]
+
+    def source_citation(
+        self, observation_id: str, span_id: Optional[str] = None
+    ) -> dict[str, Any]:
+        from ..memory.spans import SpanStore
+
+        return SpanStore(self.store).citation(
+            observation_id, span_id=span_id
+        ).to_dict()
+
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 

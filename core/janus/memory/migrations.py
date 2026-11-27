@@ -252,6 +252,26 @@ MIGRATIONS: list[Migration] = [
             ON corporate_action(security_id, effective_at);
         """,
     ),
+    Migration(
+        version=8,
+        name="source_spans",
+        sql="""
+        CREATE TABLE IF NOT EXISTS source_span (
+            id             TEXT PRIMARY KEY,
+            observation_id TEXT NOT NULL,
+            blob_hash      TEXT NOT NULL,
+            locator        TEXT NOT NULL,
+            excerpt        TEXT NOT NULL,
+            start_offset   INTEGER,
+            end_offset     INTEGER,
+            source         TEXT NOT NULL DEFAULT 'manual',
+            created_at     TEXT NOT NULL,
+            FOREIGN KEY(observation_id) REFERENCES observation(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_span_observation
+            ON source_span(observation_id, locator);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)

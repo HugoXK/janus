@@ -37,6 +37,8 @@ TOOLS = [
     "janus_universe_members",
     "janus_corporate_actions",
     "janus_adjust_price",
+    "janus_source_spans",
+    "janus_source_citation",
     "janus_persona_list",
     "janus_beliefbench_run",
 ]
@@ -212,6 +214,18 @@ def build_server(
     ) -> dict[str, Any]:
         """Return a split-adjusted price with an explicit adjustment basis."""
         return service.adjust_price(security_id, raw_price, as_of)
+
+    @server.tool()
+    def janus_source_spans(observation_id: str) -> list[dict[str, Any]]:
+        """List exact source spans attached to one observation."""
+        return service.source_spans(observation_id)
+
+    @server.tool()
+    def janus_source_citation(
+        observation_id: str, span_id: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Return a citation with the source span, locator, and excerpt."""
+        return service.source_citation(observation_id, span_id)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:
