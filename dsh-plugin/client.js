@@ -74,6 +74,7 @@ window.__ModuleLoader__.load({
       return {
         baseUrl: String(globalConfig.baseUrl || stored.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, ""),
         watchlist,
+        token: globalConfig.token || stored.token ? String(globalConfig.token || stored.token) : "",
       };
     }
 
@@ -89,11 +90,14 @@ window.__ModuleLoader__.load({
       return String(value);
     }
 
-    async function getJson(baseUrl, path) {
+    async function getJson(baseUrl, path, token) {
       const controller = typeof AbortController === "function" ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), 15000) : null;
       try {
-        const response = await fetch(`${baseUrl}${path}`, { signal: controller?.signal });
+        const response = await fetch(`${baseUrl}${path}`, {
+          signal: controller?.signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         if (!response.ok) {
           const text = await response.text();
           throw new Error(`Janus API ${response.status}: ${text.slice(0, 200)}`);
@@ -220,17 +224,21 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function useBrief(baseUrl, entity) {
+    function useBrief(baseUrl, entity, token) {
       const [state, setState] = React.useState({ loading: true, data: null, error: null, updatedAt: null });
       const load = React.useCallback(async () => {
         setState((current) => ({ ...current, loading: true, error: null }));
         try {
-          const data = await getJson(baseUrl, `/api/brief?entity_id=${encodeURIComponent(entity)}`);
+          const data = await getJson(
+            baseUrl,
+            `/api/brief?entity_id=${encodeURIComponent(entity)}`,
+            token,
+          );
           setState({ loading: false, data, error: null, updatedAt: new Date().toISOString() });
         } catch (error) {
           setState((current) => ({ ...current, loading: false, error: String(error?.message ?? error) }));
         }
-      }, [baseUrl, entity]);
+      }, [baseUrl, entity, token]);
       React.useEffect(() => {
         let disposed = false;
         const safeLoad = () => {
@@ -246,13 +254,13 @@ window.__ModuleLoader__.load({
       return { ...state, reload: load };
     }
 
-    function usePanel(baseUrl, tab, entity, active) {
+    function usePanel(baseUrl, tab, entity, active, token) {
       const [state, setState] = React.useState({ loading: false, data: null, error: null });
       const load = React.useCallback(async () => {
         setState({ loading: true, data: null, error: null });
         const query = tab === "stock" ? `?entity_id=${encodeURIComponent(entity)}` : "";
         try {
-          const data = await getJson(baseUrl, `/api/panels/${tab}${query}`);
+          const data = await getJson(baseUrl, `/api/panels/${tab}${query}`, token);
           setState({ loading: false, data, error: null });
         } catch (error) {
           setState({ loading: false, data: null, error: String(error?.message ?? error) });
@@ -270,8 +278,8 @@ window.__ModuleLoader__.load({
       const [entity, setEntity] = React.useState(config.watchlist[0] || "");
       const [expanded, setExpanded] = React.useState(false);
       const [tab, setTab] = React.useState("market");
-      const brief = useBrief(config.baseUrl, entity);
-      const panel = usePanel(config.baseUrl, tab, entity, expanded);
+      const brief = useBrief(config.baseUrl, entity, config.token);
+      const panel = usePanel(config.baseUrl, tab, entity, expanded, config.token);
       const calibration = brief.data?.calibration || {};
 
       const headerMeta = brief.loading

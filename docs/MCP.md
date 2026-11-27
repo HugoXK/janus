@@ -60,6 +60,9 @@ plugin. It is read-only:
 | `GET /api/panels/sector` | SectorDashboard or `not_materialized` |
 | `GET /api/panels/stock` | StockDashboard or `not_materialized` |
 
+When `JANUS_API_TOKEN` is set for `janus serve`, every `/api/*` route requires
+`Authorization: Bearer <token>`; `/health` remains open for readiness checks.
+
 Panel routes accept `fixture=1` for contract-shaped sample data. The stock route
 requires `entity_id` and reads the latest feature materialization at or before
 `as_of`; market and sector routes return an explicit `not_materialized` payload

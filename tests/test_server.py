@@ -46,8 +46,11 @@ def base_url():
         thread.join(timeout=5)
 
 
-def _get(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=5) as response:
+def _get(url: str, token: str | None = None) -> dict:
+    request = urllib.request.Request(url)
+    if token is not None:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=5) as response:
         return json.loads(response.read().decode())
 
 
@@ -128,3 +131,21 @@ def test_unknown_panel_is_404(base_url) -> None:
     with pytest.raises(urllib.error.HTTPError) as excinfo:
         _get(f"{base_url}/api/panels/nope")
     assert excinfo.value.code == 404
+
+
+def test_token_protects_api_but_not_health() -> None:
+    store = JanusStore(":memory:")
+    server = make_server(store, port=0, token="secret")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        assert _get(f"{url}/health")["status"] == "ok"
+        with pytest.raises(urllib.error.HTTPError) as excinfo:
+            _get(f"{url}/api/theses")
+        assert excinfo.value.code == 401
+        assert _get(f"{url}/api/theses", token="secret") == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

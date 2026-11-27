@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,7 +172,10 @@ def serve(
 
     settings = load_settings()
     server = make_server(
-        JanusStore(db or settings.database), host=host, port=port
+        JanusStore(db or settings.database),
+        host=host,
+        port=port,
+        token=os.environ.get("JANUS_API_TOKEN") or None,
     )
     bound_port = server.server_address[1]
     typer.echo(f"janus api on http://{host}:{bound_port}")

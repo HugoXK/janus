@@ -15,8 +15,11 @@ function timeoutSignal() {
   return undefined
 }
 
-async function getJson(baseUrl, path) {
-  const response = await fetch(`${baseUrl}${path}`, { signal: timeoutSignal() })
+async function getJson(baseUrl, path, token) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    signal: timeoutSignal(),
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
   if (!response.ok) {
     const text = await response.text()
     throw new Error(`Janus API ${response.status}: ${text.slice(0, 200)}`)
@@ -46,6 +49,7 @@ function resolveCronConfig(config) {
 
 export function apply(ctx, config = {}) {
   const baseUrl = String(config.baseUrl || DEFAULT_BASE_URL)
+  const token = config.token ? String(config.token) : undefined
   const watchlist = normalizeWatchlist(config.watchlist)
   const defaultEntity = watchlist.length > 0 ? watchlist[0] : ''
   let lastBrief = null
@@ -57,6 +61,7 @@ export function apply(ctx, config = {}) {
       lastBrief = await getJson(
         baseUrl,
         `/api/brief?entity_id=${encodeURIComponent(defaultEntity)}`,
+        token,
       )
       lastBriefAt = new Date().toISOString()
       lastError = null
@@ -77,7 +82,9 @@ export function apply(ctx, config = {}) {
           presentCall: () => ({ card: 'generic', title: tool.name, kind: 'read' }),
           timeoutMs: TOOL_TIMEOUT_MS,
           ...definition,
-          execute: definition.execute ?? (async (args) => await getJson(baseUrl, path(args ?? {}))),
+          execute:
+            definition.execute ??
+            (async (args) => await getJson(baseUrl, path(args ?? {}), token)),
         }),
       ),
     )
@@ -185,12 +192,12 @@ export function apply(ctx, config = {}) {
         case 'market':
           return {
             kind: 'success',
-            text: JSON.stringify(await getJson(baseUrl, '/api/panels/market'), null, 2),
+            text: JSON.stringify(await getJson(baseUrl, '/api/panels/market', token), null, 2),
           }
         case 'sector':
           return {
             kind: 'success',
-            text: JSON.stringify(await getJson(baseUrl, '/api/panels/sector'), null, 2),
+            text: JSON.stringify(await getJson(baseUrl, '/api/panels/sector', token), null, 2),
           }
         case 'stock': {
           const entity = encodeURIComponent(rest[0] || defaultEntity)
@@ -201,7 +208,7 @@ export function apply(ctx, config = {}) {
           return {
             kind: 'success',
             text: JSON.stringify(
-              await getJson(baseUrl, `/api/panels/stock?entity_id=${entity}${asOf}`),
+              await getJson(baseUrl, `/api/panels/stock?entity_id=${entity}${asOf}`, token),
               null,
               2,
             ),
@@ -210,18 +217,18 @@ export function apply(ctx, config = {}) {
         case 'forecast':
           return {
             kind: 'success',
-            text: JSON.stringify(await getJson(baseUrl, '/api/forecasts'), null, 2),
+            text: JSON.stringify(await getJson(baseUrl, '/api/forecasts', token), null, 2),
           }
         case 'thesis':
           return {
             kind: 'success',
-            text: JSON.stringify(await getJson(baseUrl, '/api/theses'), null, 2),
+            text: JSON.stringify(await getJson(baseUrl, '/api/theses', token), null, 2),
           }
         case 'review':
         case 'calibrate':
           return {
             kind: 'success',
-            text: JSON.stringify(await getJson(baseUrl, '/api/calibrate'), null, 2),
+            text: JSON.stringify(await getJson(baseUrl, '/api/calibrate', token), null, 2),
           }
         default:
           return {

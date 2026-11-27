@@ -77,6 +77,7 @@ Panel API:
       name: '@hugoxk/janus-dsh'
       config:
         baseUrl: http://127.0.0.1:8766
+        token: ${JANUS_API_TOKEN}
         watchlist: [AAPL, NVDA]
         dailyBrief:
           at: '09:00'
@@ -84,13 +85,16 @@ Panel API:
           enabled: true
 ```
 
+Set `JANUS_API_TOKEN` when starting `janus serve` and pass the same token in the
+plugin config. `/health` stays unauthenticated; every `/api/*` route requires
+`Authorization: Bearer <token>`.
+
 `dailyBrief.at` is local `HH:MM` in `dailyBrief.timeZone`. The brief refreshes
 once per day at that time and is cached for `janus_daily`; the panel also
 refreshes every five minutes while mounted.
 
 The browser defaults to `http://127.0.0.1:8766` and the host watchlist. Override
-it before the DSH web app loads with `window.__JANUS_DSH_CONFIG__ = { baseUrl,
-watchlist }`, or persist `{ "baseUrl": "...", "watchlist": [...] }` under the
+it before the DSH web app loads with `window.__JANUS_DSH_CONFIG__ = { baseUrl, token, watchlist }`, or persist `{ "baseUrl": "...", "watchlist": [...] }` under the
 `janus.dsh.config` localStorage key.
 
 ## Rules

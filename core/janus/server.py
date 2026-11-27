@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -84,13 +85,21 @@ def _fixture(panel: str) -> dict[str, Any]:
 
 class JanusHandler(BaseHTTPRequestHandler):
     service: JanusService
+    token: Optional[str] = None
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
+
+    def _authorized(self) -> bool:
+        if self.token is None:
+            return True
+        supplied = self.headers.get("Authorization", "")
+        expected = f"Bearer {self.token}"
+        return hmac.compare_digest(supplied, expected)
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -105,6 +114,9 @@ class JanusHandler(BaseHTTPRequestHandler):
                         "schema_version": SCHEMA_VERSION,
                     },
                 )
+                return
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
                 return
             if parsed.path == "/api/panels":
                 self._json(
@@ -204,9 +216,12 @@ def make_server(
     *,
     host: str = "127.0.0.1",
     port: int = 8766,
+    token: Optional[str] = None,
 ) -> ThreadingHTTPServer:
     service = JanusService(store or JanusStore(load_settings().database))
-    handler = type("BoundJanusHandler", (JanusHandler,), {"service": service})
+    handler = type(
+        "BoundJanusHandler", (JanusHandler,), {"service": service, "token": token}
+    )
     return ThreadingHTTPServer((host, port), handler)
 
 
@@ -215,8 +230,9 @@ def serve(
     *,
     host: str = "127.0.0.1",
     port: int = 8766,
+    token: Optional[str] = None,
 ) -> None:
-    server = make_server(store, host=host, port=port)
+    server = make_server(store, host=host, port=port, token=token)
     try:
         server.serve_forever()
     finally:
