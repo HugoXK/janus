@@ -231,6 +231,27 @@ MIGRATIONS: list[Migration] = [
             ON universe_membership(security_id);
         """,
     ),
+    Migration(
+        version=7,
+        name="corporate_actions",
+        sql="""
+        CREATE TABLE IF NOT EXISTS corporate_action (
+            id                   TEXT PRIMARY KEY,
+            security_id          TEXT NOT NULL,
+            action_type          TEXT NOT NULL,
+            effective_at         TEXT NOT NULL,
+            ratio                REAL,
+            cash_amount          REAL,
+            currency             TEXT NOT NULL DEFAULT '',
+            related_security_id  TEXT,
+            source               TEXT NOT NULL DEFAULT 'manual',
+            raw_hash             TEXT NOT NULL DEFAULT '',
+            payload              TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_corporate_action_security
+            ON corporate_action(security_id, effective_at);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)

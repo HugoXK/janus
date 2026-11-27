@@ -85,6 +85,14 @@ security row. `SecurityMaster.resolve()` and `members()` filter both windows, so
 a universe query cannot include a delisted or not-yet-listed name. Migration v6
 adds both tables.
 
+## Corporate actions
+
+`corporate_action` stores splits, stock/cash dividends, mergers, spin-offs, and
+symbol changes with `effective_at`, source, raw hash, and payload. The ledger
+returns an explicit adjustment basis: split factors and cash dividends are
+applied deterministically, while merger/spin-off/symbol-change rows are flagged
+as manual actions rather than silently applied. Migration v7 adds the table.
+
 ## As-of semantics
 
 There are two questions, and two modes:
