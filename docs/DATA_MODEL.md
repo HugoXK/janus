@@ -76,6 +76,15 @@ version. Predictions reference an artifact through the existing `model_version`
 column using the `version@<artifact_id[:12]>` convention; no table or migration
 is added. See `docs/FORECASTING.md` for replay rules.
 
+## Security master and universe membership
+
+`security` stores symbol/exchange/share-class rows with `valid_from`/`valid_to`;
+the same symbol can belong to different entities in different windows.
+`universe_membership` stores point-in-time index membership and joins to the
+security row. `SecurityMaster.resolve()` and `members()` filter both windows, so
+a universe query cannot include a delisted or not-yet-listed name. Migration v6
+adds both tables.
+
 ## As-of semantics
 
 There are two questions, and two modes:
