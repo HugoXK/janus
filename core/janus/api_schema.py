@@ -6,8 +6,8 @@ from typing import Any
 def openapi_document() -> dict[str, Any]:
     """Return the OpenAPI contract for the local read-only JSON API."""
 
-    json_response = {"200": {"description": "JSON payload"}}
-    security = [{"bearerAuth": []}]
+    json_response: dict[str, Any] = {"200": {"description": "JSON payload"}}
+    security: list[dict[str, Any]] = [{"bearerAuth": []}]
     paths: dict[str, Any] = {
         "/health": {
             "get": {
@@ -66,7 +66,7 @@ def openapi_document() -> dict[str, Any]:
         },
     }
     for panel in ("market", "sector", "stock"):
-        parameters = [
+        parameters: list[dict[str, Any]] = [
             {"name": "fixture", "in": "query", "schema": {"type": "string"}},
         ]
         if panel == "stock":
