@@ -160,6 +160,30 @@ def schema_check(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
+    port: int = typer.Option(8766, "--port", help="Bind port"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Serve the local JSON API used by the DSH plugin."""
+
+    from .server import make_server
+
+    settings = load_settings()
+    server = make_server(
+        JanusStore(db or settings.database), host=host, port=port
+    )
+    bound_port = server.server_address[1]
+    typer.echo(f"janus api on http://{host}:{bound_port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+@app.command()
 def migrate(
     db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show pending migrations only"),
