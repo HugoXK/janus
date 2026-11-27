@@ -121,6 +121,7 @@ No performance claims yet. The scaffold proves the invariants:
 | Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
 | Entity graph resolves ticker, CIK, and names | `tests/test_entities.py` |
 | Security master and universe membership are point-in-time | `tests/test_security_master.py` |
+| Corporate actions drive an explicit, replayable price adjustment | `tests/test_corporate_actions.py` |
 | Provenance trace and as-of search | `tests/test_provenance.py` |
 | yfinance maps adjusted close | `tests/test_yfinance.py` |
 | FRED latest and ALFRED vintage | `tests/test_fred.py` |

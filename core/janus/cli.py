@@ -20,6 +20,7 @@ from .forecast.registry import (
 )
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
+from .memory.corporate_actions import CorporateActionLedger
 from .memory.security_master import SecurityMaster
 from .memory.store import JanusStore
 
@@ -32,11 +33,13 @@ schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
 security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
+actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
+app.add_typer(actions_app, name="actions")
 
 
 @app.command()
@@ -240,6 +243,53 @@ def universe_members(
     else:
         for row in payload:
             typer.echo(f"{row['symbol']} {row['id']}")
+
+
+@actions_app.command("list")
+def actions_list(
+    security_id: Optional[str] = typer.Option(None, "--security", help="Security id"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List corporate actions in effective-time order."""
+
+    settings = load_settings()
+    stamp = _as_of_option(as_of) if as_of else None
+    rows = CorporateActionLedger(JanusStore(db or settings.database)).list(
+        security_id, as_of=stamp
+    )
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for row in payload:
+            typer.echo(
+                f"{row['effective_at']} {row['security_id']} {row['action_type']}"
+            )
+
+
+@actions_app.command("adjust")
+def actions_adjust(
+    security_id: str = typer.Argument(..., help="Security id"),
+    raw_price: float = typer.Option(..., "--price", help="Raw price"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Adjust a raw price and print the explicit basis."""
+
+    settings = load_settings()
+    payload = CorporateActionLedger(JanusStore(db or settings.database)).adjust_price(
+        security_id, raw_price, _as_of_option(as_of)
+    )
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{security_id} raw={payload['raw_price']} "
+            f"adjusted={payload['adjusted_price']:.6f} basis={payload['basis']}"
+        )
 
 
 @app.command()

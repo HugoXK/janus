@@ -35,6 +35,8 @@ TOOLS = [
     "janus_calibrate",
     "janus_security_resolve",
     "janus_universe_members",
+    "janus_corporate_actions",
+    "janus_adjust_price",
     "janus_persona_list",
     "janus_beliefbench_run",
 ]
@@ -196,6 +198,20 @@ def build_server(
     def janus_universe_members(universe: str, as_of: str) -> list[dict[str, Any]]:
         """Return the point-in-time members of a universe."""
         return service.universe_members(universe, as_of)
+
+    @server.tool()
+    def janus_corporate_actions(
+        security_id: Optional[str] = None, as_of: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """List corporate actions, optionally bounded by security and as-of."""
+        return service.corporate_actions(security_id, as_of)
+
+    @server.tool()
+    def janus_adjust_price(
+        security_id: str, raw_price: float, as_of: str
+    ) -> dict[str, Any]:
+        """Return a split-adjusted price with an explicit adjustment basis."""
+        return service.adjust_price(security_id, raw_price, as_of)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:
