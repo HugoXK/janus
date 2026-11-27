@@ -166,6 +166,35 @@ class JanusService:
     def calibrate(self) -> dict[str, Any]:
         return asdict(CalibrationService.from_store(self.store))
 
+    def security_resolve(
+        self, symbol: str, as_of: str | datetime, *, exchange: Optional[str] = None
+    ) -> dict[str, Any]:
+        from ..memory.security_master import SecurityMaster
+
+        security = SecurityMaster(self.store).resolve(
+            symbol, _parse_time(as_of), exchange=exchange
+        )
+        if security is None:
+            raise KeyError(f"security not found: {symbol}")
+        return security.to_dict()
+
+    def security_history(self, symbol: str) -> list[dict[str, Any]]:
+        from ..memory.security_master import SecurityMaster
+
+        return [item.to_dict() for item in SecurityMaster(self.store).history(symbol)]
+
+    def universe_members(
+        self, universe: str, as_of: str | datetime
+    ) -> list[dict[str, Any]]:
+        from ..memory.security_master import SecurityMaster
+
+        return [
+            item.to_dict()
+            for item in SecurityMaster(self.store).members(
+                universe, _parse_time(as_of)
+            )
+        ]
+
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 

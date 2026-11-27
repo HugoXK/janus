@@ -120,6 +120,7 @@ No performance claims yet. The scaffold proves the invariants:
 | As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
 | Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
 | Entity graph resolves ticker, CIK, and names | `tests/test_entities.py` |
+| Security master and universe membership are point-in-time | `tests/test_security_master.py` |
 | Provenance trace and as-of search | `tests/test_provenance.py` |
 | yfinance maps adjusted close | `tests/test_yfinance.py` |
 | FRED latest and ALFRED vintage | `tests/test_fred.py` |
@@ -329,8 +330,7 @@ examples/        offline demo entry point
 
 ## Roadmap
 
-The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md). The v0.1.0
-release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
+The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md). The v0.1.0 release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 
 - [x] Repository scaffold
 - [x] Domain contracts and JSON Schema

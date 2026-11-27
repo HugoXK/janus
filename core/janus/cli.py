@@ -21,6 +21,7 @@ from .forecast.registry import (
 )
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
+from .memory.security_master import SecurityMaster
 from .memory.store import JanusStore
 
 app = typer.Typer(
@@ -30,9 +31,13 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+security_app = typer.Typer(help="Resolve point-in-time securities.")
+universe_app = typer.Typer(help="Query point-in-time universe membership.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(security_app, name="security")
+app.add_typer(universe_app, name="universe")
 
 
 @app.command()
@@ -250,6 +255,82 @@ def serve(
         pass
     finally:
         server.server_close()
+def _as_of_option(value: str) -> datetime:
+    try:
+        stamp = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp
+
+
+@security_app.command("resolve")
+def security_resolve(
+    symbol: str = typer.Argument(..., help="Ticker or symbol"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    exchange: Optional[str] = typer.Option(None, "--exchange", help="Exchange filter"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve a symbol as it existed at one time."""
+
+    settings = load_settings()
+    security = SecurityMaster(JanusStore(db or settings.database)).resolve(
+        symbol, _as_of_option(as_of), exchange=exchange
+    )
+    if security is None:
+        typer.echo(f"security not found: {symbol}", err=True)
+        raise typer.Exit(code=1)
+    if as_json:
+        typer.echo(json.dumps(security.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{security.id} {security.symbol} entity={security.entity_id} "
+            f"exchange={security.exchange or '-'} {security.valid_from.isoformat()}"
+        )
+
+
+@security_app.command("history")
+def security_history(
+    symbol: str = typer.Argument(..., help="Ticker or symbol"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show every security-master row for a symbol."""
+
+    settings = load_settings()
+    rows = SecurityMaster(JanusStore(db or settings.database)).history(symbol)
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for row in payload:
+            typer.echo(
+                f"{row['id']} {row['symbol']} {row['valid_from']} -> "
+                f"{row['valid_to'] or 'open'}"
+            )
+
+
+@universe_app.command("members")
+def universe_members(
+    universe: str = typer.Argument(..., help="Universe name, e.g. SPX"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Return the members that existed in a universe at one time."""
+
+    settings = load_settings()
+    rows = SecurityMaster(JanusStore(db or settings.database)).members(
+        universe, _as_of_option(as_of)
+    )
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for row in payload:
+            typer.echo(f"{row['symbol']} {row['id']}")
 
 
 @app.command()
