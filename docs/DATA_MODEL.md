@@ -76,6 +76,13 @@ version. Predictions reference an artifact through the existing `model_version`
 column using the `version@<artifact_id[:12]>` convention; no table or migration
 is added. See `docs/FORECASTING.md` for replay rules.
 
+## Maintenance
+
+`core/janus/memory/maintenance.py` wraps `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check`, the SQLite backup API, `VACUUM`, and per-table row
+counts. The CLI exposes `janus db check|backup|vacuum|stats`; backups are written
+through SQLite's online backup API so the copy is consistent.
+
 ## As-of semantics
 
 There are two questions, and two modes:

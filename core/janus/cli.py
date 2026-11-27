@@ -18,6 +18,7 @@ from .forecast.registry import (
     ModelArtifact,
     ModelRegistry,
 )
+from .memory.maintenance import backup, integrity_check, stats, vacuum
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.store import JanusStore
@@ -29,9 +30,11 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+db_app = typer.Typer(help="Check, back up, and maintain the SQLite store.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(db_app, name="db")
 
 
 @app.command()
@@ -157,6 +160,67 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+@db_app.command("check")
+def db_check(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run SQLite integrity and foreign-key checks."""
+
+    settings = load_settings()
+    report = integrity_check(JanusStore(db or settings.database))
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"ok={report.ok} integrity={', '.join(report.integrity)} "
+            f"foreign_key_errors={len(report.foreign_key_errors)}"
+        )
+    if not report.ok:
+        raise typer.Exit(code=1)
+
+
+@db_app.command("backup")
+def db_backup(
+    out: Path = typer.Argument(..., help="Backup destination"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Write a consistent SQLite backup."""
+
+    settings = load_settings()
+    target = backup(JanusStore(db or settings.database), out)
+    typer.echo(f"wrote {target}")
+
+
+@db_app.command("vacuum")
+def db_vacuum(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Reclaim unused SQLite space."""
+
+    settings = load_settings()
+    vacuum(JanusStore(db or settings.database))
+    typer.echo("vacuum complete")
+
+
+@db_app.command("stats")
+def db_stats(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show row counts, file size, and schema version."""
+
+    settings = load_settings()
+    payload = stats(JanusStore(db or settings.database))
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"path={payload['path']} bytes={payload['bytes']} "
+            f"rows={payload['total_rows']} schema={payload['schema_version']}"
+        )
 
 
 @app.command()
