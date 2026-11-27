@@ -137,6 +137,7 @@ No performance claims yet. The scaffold proves the invariants:
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Brief/snapshot CLI commands are scriptable | `tests/test_cli_brief_snapshot.py` |
 | Local API exposes request metrics and X-Request-ID | `tests/test_server.py` |
 | Local JSON API publishes an OpenAPI contract | `tests/test_server.py` |
 | DSH dock/cron reads the local JSON panel API | `tests/test_server.py` |
@@ -279,6 +280,13 @@ This demo is research tooling, not investment advice.
 ```
 
 The numbers come from a toy sample. They demonstrate the mechanics, not skill.
+
+## Command-line quickstart
+
+```bash
+janus brief AAPL --json
+janus snapshot AAPL --as-of 2026-01-02T00:00:00+00:00 --out snap.json
+```
 
 ## Data sources
 

@@ -160,6 +160,71 @@ def schema_check(
         raise typer.Exit(code=1)
 
 
+def _service(db: Optional[str]):
+    from .mcp.service import JanusService
+
+    settings = load_settings()
+    return JanusService(JanusStore(db or settings.database))
+
+
+def _emit_json(payload) -> None:
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+
+@app.command()
+def brief(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show the daily brief for one entity."""
+
+    try:
+        payload = _service(db).brief(entity, as_of)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+        return
+    typer.echo(f"brief {entity} as_of={payload['as_of']}")
+    typer.echo(
+        f"theses={len(payload['theses'])} forecasts={len(payload['forecasts'])} "
+        f"observations={len(payload['observations'])}"
+    )
+    calibration = payload["calibration"]
+    typer.echo(
+        f"brier={calibration.get('brier')} ece={calibration.get('ece')} "
+        f"n={calibration.get('n')}"
+    )
+
+
+@app.command()
+def snapshot(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    out: Optional[Path] = typer.Option(None, "--out", help="Write snapshot JSON"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Create a hash-addressed point-in-time snapshot."""
+
+    try:
+        payload = _service(db).snapshot(entity, as_of)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
+    if as_json or out is None:
+        _emit_json(payload)
+    else:
+        typer.echo(
+            f"snapshot {payload['entity_id']} as_of={payload['as_of']} "
+            f"count={payload['count']} hash={payload['snapshot_hash']}"
+        )
+
+
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
