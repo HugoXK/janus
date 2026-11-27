@@ -90,3 +90,27 @@ def test_issues_carry_source_and_entity() -> None:
     issue = next(item for item in report.errors if item.code == "non_positive_price")
     assert issue.source == "test"
     assert issue.entity_id == "ACME"
+
+
+def test_quality_cli_json(tmp_path, monkeypatch) -> None:
+    import json
+
+    from typer.testing import CliRunner
+
+    from janus.cli import app
+    from janus.memory.store import JanusStore
+
+    path = tmp_path / "janus.db"
+    store = JanusStore(path)
+    store.insert_observation(_observation("bad", close=-1))
+    monkeypatch.setenv("JANUS_DB", str(path))
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["quality", "ACME", "--as-of", "2026-01-02T00:00:00+00:00", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["checked"] == 1
+    assert "non_positive_price" in {issue["code"] for issue in payload["errors"]}

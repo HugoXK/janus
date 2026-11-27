@@ -33,6 +33,7 @@ TOOLS = [
     "janus_forecast_settle",
     "janus_review_debrief",
     "janus_calibrate",
+    "janus_quality",
     "janus_persona_list",
     "janus_beliefbench_run",
 ]
@@ -182,6 +183,13 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    def janus_quality(
+        entity_id: str, as_of: str, limit: int = 500
+    ) -> dict[str, Any]:
+        """Run data-quality checks over one entity's as-of observations."""
+        return service.quality_report(entity_id, as_of, limit=limit)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:

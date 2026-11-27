@@ -11,6 +11,7 @@ import typer
 from . import __version__
 from .config import load_settings
 from .contracts import SCHEMA_VERSION, check_schema, write_schema
+from .data.quality import check_observations
 from .demo import run_demo
 from .forecast.registry import (
     ArtifactCorruptError,
@@ -19,7 +20,7 @@ from .forecast.registry import (
     ModelRegistry,
 )
 from .memory.migrations import apply_migrations, current_version
-from .memory.models import ObservationKind
+from .memory.models import Observation, ObservationKind
 from .memory.store import JanusStore
 
 app = typer.Typer(
@@ -157,6 +158,45 @@ def schema_check(
     typer.echo(detail)
     if not ok:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def quality(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    limit: int = typer.Option(500, "--limit", help="Maximum observations"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run duplicate/provenance/price/staleness checks over an as-of view."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    settings = load_settings()
+    rows = JanusStore(db or settings.database).query_observations_as_of(
+        entity, stamp, mode="published", limit=limit
+    )
+    report = check_observations(rows, as_of=stamp)
+    payload = {
+        "entity_id": entity,
+        "as_of": stamp.isoformat(),
+        "checked": report.checked,
+        "errors": [issue.__dict__ for issue in report.errors],
+        "warnings": [issue.__dict__ for issue in report.warnings],
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    typer.echo(
+        f"{entity} as_of={stamp.isoformat()} checked={report.checked} "
+        f"errors={len(report.errors)} warnings={len(report.warnings)}"
+    )
+    for issue in report.issues:
+        typer.echo(f"- {issue.severity} {issue.code}: {issue.message}")
 
 
 @app.command()

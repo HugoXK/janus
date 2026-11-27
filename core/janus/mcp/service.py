@@ -163,6 +163,26 @@ class JanusService:
     def calibrate(self) -> dict[str, Any]:
         return asdict(CalibrationService.from_store(self.store))
 
+    def quality_report(
+        self, entity_id: str, as_of: str | datetime, *, limit: int = 500
+    ) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from ..data.quality import check_observations
+        from ..memory.models import Observation
+
+        rows = self.as_of_query(entity_id, as_of, limit=limit)
+        observations = [Observation.model_validate(row) for row in rows]
+        stamp = _parse_time(as_of)
+        report = check_observations(observations, as_of=stamp)
+        return {
+            "entity_id": entity_id,
+            "as_of": stamp.isoformat(),
+            "checked": report.checked,
+            "errors": [asdict(issue) for issue in report.errors],
+            "warnings": [asdict(issue) for issue in report.warnings],
+        }
+
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 
