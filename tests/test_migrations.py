@@ -28,19 +28,21 @@ def test_fresh_store_has_the_current_schema() -> None:
     assert "feature_value" in _tables(store._conn)
     assert "ingestion_run" in _tables(store._conn)
     assert "ingestion_dead_letter" in _tables(store._conn)
+    assert "security" in _tables(store._conn)
+    assert "universe_membership" in _tables(store._conn)
     assert "snapshot_id" in _columns(store._conn, "observation")
 
 
 def test_migrations_are_idempotent() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection) == [1, 2, 3, 4, 5]
+    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6]
     assert apply_migrations(connection) == []
     assert current_version(connection) == LATEST_VERSION
 
 
 def test_dry_run_does_not_write() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5]
+    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6]
     assert current_version(connection) == 0
     assert "observation" not in _tables(connection)
     assert "schema_migrations" not in _tables(connection)
@@ -58,4 +60,5 @@ def test_applied_versions_are_recorded() -> None:
         (3, "entity_graph"),
         (4, "feature_store"),
         (5, "ingestion"),
+        (6, "security_master"),
     ]
