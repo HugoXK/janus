@@ -136,7 +136,7 @@ No performance claims yet. The scaffold proves the invariants:
 | MCP service round-trip | `tests/test_mcp_service.py` |
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
-| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Retries, dead letters, replay, and contained store failures | `tests/test_scheduler.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
