@@ -28,8 +28,8 @@ dock/panels, commands, HTTP panel API, and daily brief cron. See
 `tests/test_debrief.py`, `tests/test_persona_weighting.py`,
 `tests/test_mcp_service.py`, `tests/test_beliefbench.py`,
 `tests/test_gdelt.py`, `tests/test_rss.py`, `tests/test_scheduler.py`,
-`tests/test_quality.py`, `tests/test_quantiles.py`, `tests/test_scenarios.py`,
-`tests/test_backtest.py`, and `tests/test_copy.py`.
+`tests/test_quality.py`, `tests/test_blob.py`, `tests/test_quantiles.py`,
+`tests/test_scenarios.py`, `tests/test_backtest.py`, and `tests/test_copy.py`.
 `tests/test_quality.py`, `tests/test_server.py`, and `tests/test_copy.py`.
 
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
