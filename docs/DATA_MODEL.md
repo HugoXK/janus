@@ -93,6 +93,14 @@ returns an explicit adjustment basis: split factors and cash dividends are
 applied deterministically, while merger/spin-off/symbol-change rows are flagged
 as manual actions rather than silently applied. Migration v7 adds the table.
 
+## Source spans
+
+`source_span` stores an exact locator (`page=12;paragraph=3`, table cell, etc.),
+excerpt, optional byte offsets, and a blob hash tied to an observation.
+`SpanStore.citation()` refuses a missing span and returns a citation containing
+source, published time, URI/hash, locator, and excerpt hash. Migration v8 adds
+the table.
+
 ## As-of semantics
 
 There are two questions, and two modes:
