@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts.release import bump_version, check_versions, read_versions
+from scripts.release import bump_version, check_versions, main, read_versions
 
 
 def _root(tmp_path):
@@ -70,3 +70,10 @@ def test_dry_run_does_not_write(tmp_path) -> None:
 def test_invalid_version_is_rejected(tmp_path) -> None:
     with pytest.raises(ValueError, match="semantic version"):
         bump_version(_root(tmp_path), "v2", write=True)
+
+
+def test_expect_tag_match_and_mismatch(tmp_path, capsys):
+    root = _root(tmp_path)
+    assert main(["--root", str(root), "--expect-tag", "v0.1.0"]) == 0
+    assert main(["--root", str(root), "--expect-tag", "v9.9.9"]) == 1
+    assert "does not match" in capsys.readouterr().err

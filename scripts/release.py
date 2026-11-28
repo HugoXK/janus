@@ -124,6 +124,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bump", metavar="VERSION")
     parser.add_argument("--write", action="store_true", help="Actually modify files")
     parser.add_argument("--message", default="", help="Changelog entry for the bump")
+    parser.add_argument(
+        "--expect-tag",
+        default="",
+        help="Fail unless the package version matches this release tag",
+    )
     args = parser.parse_args(argv)
     root = args.root.resolve()
     try:
@@ -144,7 +149,15 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print(f"versions ok: {read_versions(root)[0].value}")
+    version = read_versions(root)[0].value
+    expected = args.expect_tag.removeprefix("v")
+    if expected and version != expected:
+        print(
+            f"tag v{version} does not match expected {expected}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"versions ok: {version}")
     return 0
 
 
