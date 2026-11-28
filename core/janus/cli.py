@@ -725,8 +725,7 @@ def _share_signer(key_id: str):
 def _share_service(db: Optional[str], key_id: str):
     from .share.service import ShareService
 
-    settings = load_settings()
-    return ShareService(JanusStore(db or settings.database), _share_signer(key_id))
+    return ShareService(_open_store(db), _share_signer(key_id))
 
 
 @share_app.command("request")
@@ -755,8 +754,7 @@ def share_request(
             body = json.loads(payload_file.read_text())
     except (json.JSONDecodeError, TypeError, OSError) as exc:
         raise typer.BadParameter("payload must be valid JSON") from exc
-    settings = load_settings()
-    service = ShareService(JanusStore(db or settings.database))
+    service = ShareService(_open_store(db))
     try:
         request = service.request(
             kind=kind,
@@ -813,8 +811,7 @@ def share_reject(
 
     from .share.service import ShareService
 
-    settings = load_settings()
-    service = ShareService(JanusStore(db or settings.database))
+    service = ShareService(_open_store(db))
     try:
         request = service.reject(request_id, approver=approver, reason=reason)
     except (KeyError, ValueError) as exc:
@@ -832,8 +829,7 @@ def share_list(
 
     from .share.service import ShareService
 
-    settings = load_settings()
-    service = ShareService(JanusStore(db or settings.database))
+    service = ShareService(_open_store(db))
     requests = [request.to_dict() for request in service.list(status)]
     if as_json:
         typer.echo(json.dumps(requests, indent=2, sort_keys=True, default=str))
@@ -1236,11 +1232,8 @@ def report(
         stamp = stamp.replace(tzinfo=timezone.utc)
     if limit < 1 or limit > 10000:
         raise typer.BadParameter("limit must be between 1 and 10000")
-    settings = load_settings()
     try:
-        result = build_research_report(
-            JanusStore(db or settings.database), entity, stamp, limit=limit
-        )
+        result = build_research_report(_open_store(db), entity, stamp, limit=limit)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     if as_json:
@@ -1349,8 +1342,7 @@ def counterfactual(
     from .review.counterfactual import CounterfactualReplay
 
     parsed = _parse_number_map(overrides, "overrides") if overrides else {}
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    store = _open_store(db)
     try:
         report = CounterfactualReplay(store).replay(
             prediction_id,
@@ -1386,8 +1378,7 @@ def persona_list(
 ) -> None:
     """List stored personas and their weights."""
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    store = _open_store(db)
     personas = [
         {
             "id": persona.id,
@@ -1419,8 +1410,7 @@ def persona_tournament(
 
     from .persona.tournament import PersonaTournament
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    store = _open_store(db)
     try:
         report = PersonaTournament.load(scenarios).run(
             store.list_personas(),
