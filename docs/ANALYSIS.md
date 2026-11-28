@@ -72,6 +72,18 @@ feature_store.history("AAPL", "rsi_14")
 
 These models are part of `CONTRACT_MODELS` and the exported JSON Schema.
 
+## Persona evolution
+
+`core/janus/persona/evolution.py` runs a deterministic evolutionary search over
+the taste profile. Fitness is training Brier score; promotion requires at least
+five held-out scenarios and a held-out Brier improvement greater than the
+configured threshold (default `0.01`), otherwise the baseline persona is
+retained. A held-out set below the five-scenario floor cannot distinguish a
+real improvement from noise, so the baseline is kept and the reason says why.
+RNG, persona id, version, and created_at are derived from the seed and chosen
+profile so a run is reproducible; `created_at` is the last training scenario's
+resolution time (look-ahead safe), not a wall-clock build instant. This is a
+safe local fallback for AgentDescent, not a claim of alpha.
 ## Fundamentals and events
 
 `core/janus/analysis/fundamentals.py` turns as-filed SEC facts into revenue,
