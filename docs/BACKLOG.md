@@ -7,7 +7,7 @@ criteria.
 
 ## How to read this
 
-**Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, JAN-005, JAN-007, JAN-029, JAN-030, JAN-032, JAN-036, JAN-038,
+**Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, JAN-005, JAN-007, JAN-029, JAN-030, JAN-032, JAN-036, JAN-038, JAN-018,
 JAN-008, JAN-009, JAN-010, JAN-015, JAN-016, JAN-019, JAN-023, JAN-024, JAN-025,
 JAN-027, JAN-028, JAN-031 (tracker #39 / JAN-074), JAN-033, JAN-034, JAN-035,
 JAN-037, JAN-040, JAN-041,
@@ -31,7 +31,7 @@ dock/panels, commands, HTTP panel API, and daily brief cron. See
 `tests/test_quality.py`, `tests/test_counterfactual.py`,
 `tests/test_persona_tournament.py`, `tests/test_blob.py`,
 `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py`,
-`tests/test_server.py`, and `tests/test_copy.py`.
+`tests/test_server.py`, `tests/test_conflicts.py`, and `tests/test_copy.py`.
 
 JAN-143 (MCP scoped auth and write approvals, #151) is implemented:
 per-caller tokens, per-registration scopes, approval-first writes, and an
