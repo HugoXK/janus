@@ -56,8 +56,9 @@ print(result.fetched, result.stored, result.failed, result.dead_letters)
   even when other entities fetch in parallel.
 - Exhausted entities go to `ingestion_dead_letter`; `replay` retries them and
   stamps `replayed_at`.
-- `ingestion_run` records status and counts for each run. A failing entity makes
-  the status `partial`; a store error still aborts the run.
+- `ingestion_run` records status and counts for each run. A failing fetch or
+  store write becomes a per-entity dead letter, so the run ends `partial` instead
+  of aborting or staying `running`.
 
 ## Quality checks
 
