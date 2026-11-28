@@ -38,16 +38,6 @@ from .memory.snapshot_archive import export_snapshot, import_snapshot, verify_sn
 from .memory.store import JanusStore
 
 
-def _reject_constant(value: str) -> float:
-    raise ValueError(f"non-finite number: {value}")
-
-
-def _finite_float(key: str, value: object) -> float:
-    number = float(value)  # type: ignore[arg-type]
-    if not math.isfinite(number):
-        raise ValueError(f"{key} must be a finite number")
-    return number
-
 app = typer.Typer(
     add_completion=False,
     help="Janus — a market agent with memory and foresight.",
@@ -962,20 +952,7 @@ def counterfactual(
 
     from .review.counterfactual import CounterfactualReplay
 
-    parsed: dict[str, float] = {}
-    if overrides:
-        try:
-            raw_overrides = json.loads(overrides, parse_constant=_reject_constant)
-            if not isinstance(raw_overrides, dict):
-                raise ValueError("overrides must be a JSON object")
-            parsed = {
-                str(key): _finite_float(str(key), value)
-                for key, value in raw_overrides.items()
-            }
-        except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
-            raise typer.BadParameter(
-                "overrides must be a JSON object of finite numbers"
-            ) from exc
+    parsed = _parse_number_map(overrides, "overrides") if overrides else {}
     settings = load_settings()
     store = JanusStore(db or settings.database)
     try:
