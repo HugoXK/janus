@@ -109,6 +109,64 @@ def test_list_is_non_fatal_with_a_corrupt_file(home: Path) -> None:
     assert artifact.artifact_id[:12] in result.output
 
 
+# #78 AC1: `--json` must never be silently incomplete ----------------------
+
+
+def _corrupt(home: Path, name: str) -> Path:
+    path = home / "models" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    return path
+
+
+def test_list_json_mode_exits_one_and_names_corrupt_artifacts(home: Path) -> None:
+    artifact = _artifact(home)
+    broken = _corrupt(home, "badc0ffee000.json")
+
+    result = runner.invoke(app, ["model", "list", "--json"])
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert isinstance(payload, list), "the top-level JSON type must stay an array"
+    assert [item["artifact_id"] for item in payload] == [artifact.artifact_id]
+    assert result.stderr.strip() == f"artifact corrupt: {broken}"
+
+
+def test_list_json_mode_all_corrupt_exits_one_with_empty_array(home: Path) -> None:
+    broken = _corrupt(home, "deadbeef0000.json")
+
+    result = runner.invoke(app, ["model", "list", "--json"])
+
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.output) == []
+    assert result.stderr.strip() == f"artifact corrupt: {broken}"
+
+
+def test_list_json_mode_clean_store_exits_zero_with_empty_stderr(home: Path) -> None:
+    _artifact(home)
+
+    result = runner.invoke(app, ["model", "list", "--json"])
+
+    assert result.exit_code == 0
+    assert result.stderr.strip() == ""
+
+
+def test_list_json_mode_names_every_corrupt_file_in_ascending_path_order(
+    home: Path,
+) -> None:
+    _artifact(home)
+    first = _corrupt(home, "aaa00000.json")
+    last = _corrupt(home, "zzz00000.json")
+
+    result = runner.invoke(app, ["model", "list", "--json"])
+
+    assert result.exit_code == 1
+    assert result.stderr.strip().splitlines() == [
+        f"artifact corrupt: {first}",
+        f"artifact corrupt: {last}",
+    ]
+
+
 # AC10 ----------------------------------------------------------------------
 
 
