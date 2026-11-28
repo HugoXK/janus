@@ -3,8 +3,8 @@
 Janus is local-first research software. It does not execute trades, holds no
 broker credentials, and has no network service listening for inbound
 connections. This document covers the three surfaces that do exist — the MCP
-boundary, local data at rest, and the (unshipped) sharing/approval surface —
-and states honestly which controls are live today.
+boundary, local data at rest, and the sharing/approval surface — and states
+honestly which controls are live today.
 
 **Status vocabulary.** Every row uses exactly one of:
 
@@ -14,12 +14,10 @@ and states honestly which controls are live today.
 - `not implemented` — no control exists.
 
 `Status` reflects the code at the base this document was written against
-(`88ac454`, the `main` this revision was verified against); every citation
+(`54158d0`, the `main` this revision was verified against); every citation
 below was re-checked against that tree. A planned control is never described as
-preventing anything.
-If a later change ships the sharing surface (see JAN-043 and
-`docs/ARCHITECTURE.md:30`), this document must be updated against that code
-before it is merged, not against the branch that adds it.
+preventing anything. The sharing surface (JAN-043) ships a local HMAC baseline,
+not a cross-party identity system, and its rows below say so.
 
 ## Surface: MCP tools and resources
 
@@ -99,28 +97,34 @@ the same OS user cannot be told apart from a locally fitted one
 
 ## Surface: sharing and approvals
 
-**This surface does not exist at this base.** There is no `core/janus/share/`
-package, no approval object, no signed bundle and no verification code.
-`docs/ARCHITECTURE.md:30` says the shell "Reuses FlyBot and bot-social for
-scheduling, approvals, and sharing", and `docs/BACKLOG.md` lists JAN-043
-"Approvals and signed sharing" as M4/P1 — both are plans, not shipped behaviour. Until that
-work lands, the only sharing control is that nothing is shared by Janus.
+`core/janus/share/` implements an approval-first baseline. A share request is
+created as `pending`, carries its `as_of`, snapshot hash and request id, and
+returns an `ApprovalCard`. Approval is a single guarded update
+(`WHERE id = ? AND status = 'pending'`), signs a canonical envelope with
+HMAC-SHA256, records an append-only `share_audit` row, and stores the envelope.
+The signed body includes the request id, kind, as-of, snapshot hash, payload
+hash, payload, and the approver identity/time, so an envelope cannot be moved
+to another request or made to claim another approver. Verification requires the
+expected request id. The CLI exposes `janus share request|approve|reject|list|verify`;
+the secret comes from `JANUS_SHARE_SECRET` and is never stored in the repository.
 
 | Threat | Impact | Mitigation | Status | Residual risk |
 | --- | --- | --- | --- | --- |
-| A shared bundle is modified in transit or at rest | The recipient reasons over forged history | None; no bundle format or signature exists yet | not implemented | Any future unauthenticated bundle format would be trivially forgeable |
-| Sender or recipient identity is spoofed | A recipient trusts a bundle from the wrong party | None; no identity binding exists yet | not implemented | — |
-| An old, previously valid bundle is replayed | Stale or withdrawn forecasts are presented as current | None; no nonce, expiry, or sequence number exists yet | not implemented | — |
-| An approval is bypassed by writing the store directly | A change that should need sign-off is applied anyway | None; there is no approval flow and no write barrier | not implemented | The approval surface, when built, must not rely on UI-only gating |
-| Sharing leaks licensed data or provider keys | Terms-of-service breach or credential leak | None; nothing is shared | planned | Sharing must filter provider payloads and secrets by construction |
+| A shared bundle is modified in transit or at rest | The recipient reasons over forged history | Canonical payload hash plus HMAC-SHA256 signature, checked by `ShareSigner.verify`, bound to the request id | implemented | Symmetric HMAC is only as strong as secret distribution |
+| Sender or recipient identity is spoofed | A recipient trusts a bundle from the wrong party | Envelope carries `identity.key_id`; verifier requires the expected key id; `approval.approved_by` is inside the signature | partial | No asymmetric key or published identity binding |
+| An old, previously valid envelope is replayed | Stale or withdrawn forecasts are presented as current | None; envelopes carry `as_of` but no nonce, expiry, or sequence number | not implemented | A captured envelope remains valid until the secret changes |
+| An approval is bypassed or raced | A change that should need sign-off is applied anyway | Approval is one `UPDATE ... WHERE status = 'pending'`; a lost race raises instead of overwriting; the audit row is written in the same transaction | partial | Direct SQLite writes are still possible for the same OS user |
+| The audit trail is edited or deleted | The local record of who approved what is unreliable | `share_audit` has `BEFORE UPDATE`/`BEFORE DELETE` triggers that abort | implemented | A local process can drop the triggers; this is not a signed ledger |
+| Sharing leaks licensed data or provider keys | Terms-of-service breach or credential leak | `ShareService` refuses empty snapshot hashes; callers choose the payload | not implemented | There is no automatic provider-field/secret filter yet |
 
 **Open risks — sharing and approvals**
 
-- Approvals and signed sharing are **not implemented**. No signature is a live
-  control on this base, and no planned sharing feature may be described as one.
-- When the surface lands it must ship signature verification, sender/recipient
-  identity binding, and replay protection together with tests; any one missing
-  leaves the others decorative.
+- The HMAC signer is a local baseline, not a cross-party identity system. Do not
+  describe a verified envelope as proof of a remote human identity.
+- Replay protection, expiry, and revocation are not implemented.
+- Any future asymmetric signer must keep the same envelope fields (request id,
+  approver, approval time) and update this document in the same change; the
+  signature must never be reduced to a payload-only attestation.
 - The MCP boundary and the sharing boundary must not share an implicit trust
   channel: a bundle received from another party is untrusted input.
 
