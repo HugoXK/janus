@@ -76,6 +76,71 @@ version. Predictions reference an artifact through the existing `model_version`
 column using the `version@<artifact_id[:12]>` convention; no table or migration
 is added. See `docs/FORECASTING.md` for replay rules.
 
+## Source tiers and conflicts
+
+`core/janus/memory/conflicts.py` resolves competing observations only when both
+carry an explicit `fact`/`metric`/`field` key. The policy is ordered: source
+tier, observation confidence, corroborating-value count, then publication time.
+Source prefixes are matched case-insensitively and treat `-` and `_` alike.
+Both values stay in the report; a tie or a same-tier/same-time disagreement is
+explicitly `unresolved`. Human overrides are appended to a JSONL audit with the
+actor, reason, selected id, alternatives, and timestamp, never overwriting the
+original observations. Override files are single-writer: appends are not locked,
+so concurrent writers are unsupported, and readers skip unparseable lines and
+report how many were skipped. If the recorded selection no longer belongs to the
+rebuilt conflict group (for example after a restatement), the override is
+reported as `stale` with `selected_id=None` rather than re-pointing the group at
+a dangling observation.
+## Security master and universe membership
+
+`security` stores symbol/exchange/share-class rows with `valid_from`/`valid_to`;
+the same symbol can belong to different entities in different windows.
+`universe_membership` stores point-in-time index membership and joins to the
+security row. `SecurityMaster.resolve()` and `members()` filter both windows, so
+a universe query cannot include a delisted or not-yet-listed name. Migration v6
+adds both tables.
+
+## Corporate actions
+
+`corporate_action` stores splits, stock/cash dividends, mergers, spin-offs, and
+symbol changes with `effective_at`, source, raw hash, and payload. The ledger
+returns an explicit adjustment basis: split factors and cash dividends are
+applied deterministically, while merger/spin-off/symbol-change rows are flagged
+as manual actions rather than silently applied. Migration v7 adds the table.
+
+## Source spans
+
+`source_span` stores an exact locator (`page=12;paragraph=3`, table cell, etc.),
+excerpt, optional byte offsets, and a blob hash tied to an observation.
+`SpanStore.citation()` refuses a missing span and returns a citation containing
+source, published time, URI/hash, locator, and excerpt hash. Migration v8 adds
+the table.
+
+## Snapshot archives
+
+`core/janus/memory/snapshot_archive.py` exports an as-of freeze as
+`manifest.json` plus `observations.json` and `features.json` (and Parquet when
+an optional writer is available). The manifest records row counts, per-file
+SHA-256 hashes, lineage, and a content hash. `verify_snapshot` detects tampering
+or missing files before `import_snapshot` writes into a fresh store. The CLI
+exposes `janus archive export/verify/import`.
+
+## Retention and redaction
+
+`core/janus/memory/retention.py` applies source/kind retention windows and
+deletes only observations whose expiration is at or before `as_of`; a dry run
+reports the same counts without writing and sets `dry_run` on the result.
+Rules are evaluated in order and the **first match wins**, so a broad rule
+(`*:*:365`) placed first shadows every specific rule after it. `redact_value`
+masks named fields at any depth — top-level columns as well as nested keys in
+`value` — and `export_redacted` writes JSONL without mutating stored facts. The
+CLI exposes `janus retention apply` and `janus retention export`; both reject a
+naive `--as-of` so a destructive cutoff cannot silently use the host time zone.
+
+Retention deletes observation rows but leaves their content-addressed blobs on
+disk. Run `janus blob gc` afterwards when the raw documents were meant to age
+out as well.
+
 ## As-of semantics
 
 There are two questions, and two modes:

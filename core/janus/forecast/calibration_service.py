@@ -125,10 +125,10 @@ class IsotonicCalibrator:
 @dataclass(frozen=True)
 class CalibrationReport:
     n: int
-    brier: float
-    log_loss: float
-    ece: float
-    reliability: list[dict[str, float | int]]
+    brier: Optional[float]
+    log_loss: Optional[float]
+    ece: Optional[float]
+    reliability: list[dict[str, float | int | None]]
     by_regime: dict[str, dict[str, float]]
     by_horizon: dict[str, dict[str, float]]
     by_persona: dict[str, dict[str, float]]
@@ -161,9 +161,9 @@ class CalibrationService:
         if not p:
             return CalibrationReport(
                 n=0,
-                brier=float("nan"),
-                log_loss=float("nan"),
-                ece=float("nan"),
+                brier=None,
+                log_loss=None,
+                ece=None,
                 reliability=[],
                 by_regime={},
                 by_horizon={},

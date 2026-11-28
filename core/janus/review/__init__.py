@@ -1,3 +1,9 @@
+from .counterfactual import (
+    CounterfactualLeak,
+    CounterfactualReplay,
+    CounterfactualReport,
+    ReplaySide,
+)
 from .debrief import (
     AttributionEngine,
     debrief,
@@ -7,6 +13,10 @@ from .debrief import (
 
 __all__ = [
     "AttributionEngine",
+    "CounterfactualLeak",
+    "CounterfactualReplay",
+    "CounterfactualReport",
+    "ReplaySide",
     "debrief",
     "debrief_prediction",
     "simple_attribution",
