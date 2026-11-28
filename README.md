@@ -139,7 +139,8 @@ No performance claims yet. The scaffold proves the invariants:
 | MCP service round-trip | `tests/test_mcp_service.py` |
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
-| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Retries, dead letters, replay, and contained store failures | `tests/test_scheduler.py` |
+| Counterfactual replay and persona tournaments are deterministic | `tests/test_counterfactual.py`, `tests/test_persona_tournament.py` |
 | Blobs are content-addressed and GC keeps referenced payloads | `tests/test_blob.py` |
 | Quantile/scenario tools are exposed through the MCP service | `tests/test_forecast_interface.py` |
 | Quantiles, scenarios, and walk-forward costs/leaks are tested | `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py` |
