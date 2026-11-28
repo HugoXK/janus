@@ -72,6 +72,27 @@ feature_store.history("AAPL", "rsi_14")
 
 These models are part of `CONTRACT_MODELS` and the exported JSON Schema.
 
+## Fundamentals and events
+
+`core/janus/analysis/fundamentals.py` turns as-filed SEC facts into revenue,
+margin, cash-flow, leverage, growth, EPS, PE, and book-value features. Only
+facts published at or before `as_of` participate; a later restatement is visible
+only to later views. A fact whose period end is after `as_of` is excluded, and a
+fact with no parseable period is listed in `skipped_period` instead of being
+dropped silently. Every feature carries the observation ids that produced it,
+and missing inputs are listed explicitly. PE provenance lists EPS only, because
+the price is caller-supplied and has no observation id; PE is therefore not
+reproducible from provenance alone. Non-finite values (`nan`, `inf`) are treated
+as missing so a corrupt feed cannot poison the JSON report.
+
+`detect_events` maps filing/news text to earnings, M&A, litigation, insider, and
+guidance flags with the supporting observation ids. Patterns match on word
+boundaries and ambiguous words require context: `results` needs a financial or
+quarterly qualifier, `probe` needs a legal/regulatory qualifier, `settlement`
+needs "agreement"/"of"/"settled", and `outlook` needs a company/guidance
+qualifier. "Courtesy", "courtyard", "probation", "settlement cycle" and
+"analysts probe the outlook" therefore produce no flag.
+
 ## Regime baseline
 
 `classify_regime` is a rule-based baseline:
