@@ -166,6 +166,38 @@ class JanusService:
     def list_personas(self) -> list[dict[str, Any]]:
         return [_dump(persona) for persona in self.store.list_personas()]
 
+    def scenario_tree(
+        self,
+        *,
+        entity_id: str,
+        horizon: str,
+        as_of: str | datetime,
+        direction_probability: float,
+        volatility: float = 0.02,
+        trend: float = 0.0,
+        evidence: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        from ..forecast.scenarios import generate_scenario_tree
+
+        tree = generate_scenario_tree(
+            entity_id=entity_id,
+            horizon=horizon,
+            as_of=_parse_time(as_of),
+            direction_probability=direction_probability,
+            volatility=volatility,
+            trend=trend,
+            evidence=evidence,
+        )
+        return _dump(tree)
+
+    def quantile_forecast(
+        self, returns: list[float], *, horizon: int = 1
+    ) -> dict[str, Any]:
+        from ..forecast.quantiles import EmpiricalQuantileModel
+
+        forecast = EmpiricalQuantileModel().fit(returns).predict(horizon=horizon)
+        return {**asdict(forecast), "width": forecast.width}
+
     def beliefbench(
         self, scenarios_path: str, baseline: str = "always_up"
     ) -> dict[str, Any]:
