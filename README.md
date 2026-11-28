@@ -54,6 +54,7 @@ local-first, point-in-time, and built to be audited.
 - [Roadmap](#roadmap)
 - [Evaluation](#evaluation)
 - [Security and privacy](#security-and-privacy)
+- [Releases](#releases)
 - [FAQ](#faq)
 - [Contributing](#contributing)
 - [License](#license)
@@ -155,7 +156,11 @@ No performance claims yet. The scaffold proves the invariants:
 | Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
 | Retention deletes only expired rows; redaction is deep and non-mutating | `tests/test_retention.py` |
 | Research reports are deterministic, as-of bounded, and cite sources | `tests/test_report.py` |
+| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Store integrity, backup, stats, and vacuum are tested | `tests/test_maintenance.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
+| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Quality checks catch duplicate/future/stale data and are exposed via CLI + MCP | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
@@ -451,6 +456,22 @@ Point-in-time correctness and calibration. The LLM is not the hard part.
 
 **Is it production-ready?**
 No. It is a `v0.1.0` scaffold. Use it to explore, not to manage money.
+
+## Releases
+
+Version strings are checked across `pyproject.toml`, `core/janus/__init__.py`,
+`dsh-plugin/package.json`, and `package-lock.json`.
+
+```bash
+python3 scripts/release.py --root .          # check
+python3 scripts/release.py --bump 0.2.0      # dry-run
+python3 scripts/release.py --bump 0.2.0 --write --message "..."  # apply
+make release                                  # check + wheel/sdist + DSH tarball
+make release-image                            # local Docker image
+```
+
+The tag workflow rebuilds the Python distributions, the DSH plugin tarball, and
+the container image, then uploads artifacts to the GitHub release.
 
 ## Contributing
 

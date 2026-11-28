@@ -1,0 +1,8 @@
+.git
+.venv
+node_modules
+dsh-plugin/node_modules
+dist
+build
+*.db
+*.sqlite
