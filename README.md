@@ -156,6 +156,7 @@ No performance claims yet. The scaffold proves the invariants:
 | Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
 | Retention deletes only expired rows; redaction is deep and non-mutating | `tests/test_retention.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Structured logs carry run/entity/source/as-of and redact secrets | `tests/test_logging.py` |
 | Store integrity, backup, stats, and vacuum are tested | `tests/test_maintenance.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
