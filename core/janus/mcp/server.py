@@ -322,6 +322,7 @@ def build_server(
         return service.quantile_forecast(returns, horizon=horizon)
 
     @server.tool()
+    @_guarded
     def janus_security_resolve(
         symbol: str, as_of: str, exchange: Optional[str] = None
     ) -> dict[str, Any]:
