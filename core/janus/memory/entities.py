@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import builtins
+
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from .store import JanusStore
 
@@ -107,11 +109,13 @@ class EntityGraph:
         if limit < 0:
             raise ValueError("limit must be >= 0")
         rows = self.store.connection.execute(
-            "SELECT * FROM entity ORDER BY id LIMIT ?", (limit,)
+            "SELECT id, name, ticker, cik, sector, industry FROM entity "
+            "ORDER BY id LIMIT ?",
+            (limit,),
         ).fetchall()
         return [self._row_to_entity(row) for row in rows]
 
-    def aliases(self, entity_id: str) -> List[EntityAlias]:
+    def aliases(self, entity_id: str) -> builtins.list[EntityAlias]:
         rows = self.store.connection.execute(
             "SELECT alias, entity_id, source FROM entity_alias WHERE entity_id = ? ORDER BY alias",
             (entity_id,),

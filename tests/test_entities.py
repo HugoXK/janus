@@ -89,3 +89,20 @@ def test_entity_cli_resolve_show_list(tmp_path, monkeypatch) -> None:
 
     missing = runner.invoke(app, ["entity", "resolve", "MSFT"])
     assert missing.exit_code == 1
+
+
+def test_entity_cli_rejects_a_negative_limit(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "janus.db"
+    EntityGraph(JanusStore(path))
+    monkeypatch.setenv("JANUS_DB", str(path))
+    runner = CliRunner()
+
+    zero = runner.invoke(app, ["entity", "list", "--limit", "0"])
+    assert zero.exit_code == 0, zero.output
+    assert "no entities" in zero.output
+
+    bad = runner.invoke(app, ["entity", "list", "--limit", "-1"])
+    assert bad.exit_code != 0
+    combined = bad.output + getattr(bad, "stderr", "")
+    assert "limit must be >= 0" in combined
+    assert "Traceback" not in combined
