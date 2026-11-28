@@ -15,6 +15,7 @@ from .config import load_settings
 from .contracts import SCHEMA_VERSION, check_schema, write_schema
 from .data.blob import LocalBlobStore
 from .demo import run_demo
+from .logging import configure_logging
 from .forecast.registry import (
     ArtifactCorruptError,
     ArtifactNotFoundError,
@@ -81,6 +82,23 @@ app.add_typer(mcp_app, name="mcp")
 app.add_typer(entity_app, name="entity")
 app.add_typer(audit_app, name="audit")
 app.add_typer(db_app, name="db")
+
+
+@app.callback()
+def _configure_cli(
+    log_format: str = typer.Option(
+        "text", "--log-format", help="Log format: text or json"
+    ),
+    log_level: str = typer.Option(
+        "INFO", "--log-level", help="DEBUG, INFO, WARNING, ERROR, CRITICAL"
+    ),
+) -> None:
+    """Configure structured logging for every command."""
+
+    try:
+        configure_logging(log_level, log_format)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command()

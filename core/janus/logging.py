@@ -38,7 +38,10 @@ _SECRET_ASSIGNMENT = re.compile(
     r")(\s*[=:]\s*)([^\s&,;\"'<>]+)"
 )
 _SECRET_SHAPE = re.compile(
-    r"\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b"
+    r"\b(?:sk-[A-Za-z0-9_-]{8,}"
+    r"|sk_(?:live|test)_[A-Za-z0-9]{8,}"
+    r"|gh[pousr]_[A-Za-z0-9]{20,}"
+    r"|AKIA[0-9A-Z]{16})\b"
 )
 
 
@@ -76,7 +79,9 @@ def redact(value: Any, *, key: Optional[str] = None) -> Any:
             str(item_key): redact(item_value, key=str(item_key))
             for item_key, item_value in value.items()
         }
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, tuple):
+        return tuple(redact(item) for item in value)
+    if isinstance(value, list):
         return [redact(item) for item in value]
     return value
 
@@ -111,7 +116,8 @@ class JsonFormatter(logging.Formatter):
         }
         structured = getattr(record, "janus", None)
         if isinstance(structured, Mapping):
-            payload.update(structured)
+            for structured_key, structured_value in structured.items():
+                payload.setdefault(str(structured_key), structured_value)
         else:
             payload["event"] = record.getMessage()
         if record.exc_info:

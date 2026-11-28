@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import datetime, timezone
 
+from typer.testing import CliRunner
+
+from janus.cli import app
+from janus.data.scheduler import IngestionScheduler
 from janus.logging import (
     JsonFormatter,
     TextFormatter,
@@ -12,6 +17,10 @@ from janus.logging import (
     current_correlation,
     redact,
 )
+from janus.memory.store import JanusStore
+
+runner = CliRunner()
+
 # Synthetic fixtures: built at runtime so the secret scanner does not treat
 # these obviously-fake test values as committed credentials.
 _FAKE_SK = "sk-" + "test" * 4
@@ -134,3 +143,65 @@ def test_text_and_json_configuration_are_reconfigurable() -> None:
     logger = configure_logging("INFO", "json")
     assert logger.handlers
     assert sum(1 for handler in logger.handlers if getattr(handler, "_janus_console", False)) == 1
+
+
+def test_scheduler_emits_correlated_json_fields(caplog) -> None:
+    class FailingSource:
+        name = "failing"
+
+        def fetch(self, entity_id, start, end):
+            raise RuntimeError("boom")
+
+    caplog.set_level(logging.INFO, logger="janus")
+    store = JanusStore(":memory:")
+    result = IngestionScheduler(store, retries=0).run(
+        FailingSource(),
+        ["ACME"],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 2, tzinfo=timezone.utc),
+    )
+
+    records = [record.janus for record in caplog.records if hasattr(record, "janus")]
+    events = {record["event"] for record in records}
+    assert events == {"ingestion.start", "ingestion.dead_letter", "ingestion.complete"}
+    for record in records:
+        assert record["run_id"] == result.run_id
+        assert record["source"] == "failing"
+    dead = next(record for record in records if record["event"] == "ingestion.dead_letter")
+    assert dead["entity_id"] == "ACME"
+    assert "as_of" in dead
+    assert "boom" in dead["error"]
+
+
+def test_cli_accepts_log_format_and_rejects_bad_values() -> None:
+    ok = runner.invoke(app, ["--log-format", "json", "version"])
+    assert ok.exit_code == 0, ok.output
+    bad = runner.invoke(app, ["--log-format", "xml", "version"])
+    assert bad.exit_code != 0
+
+
+def test_redact_masks_aws_and_live_key_shapes() -> None:
+    _FAKE_AWS = "AKIA" + "Q" * 16
+    _FAKE_LIVE = "sk_" + "live_" + "z" * 20
+    payload = {"aws": _FAKE_AWS, "live": _FAKE_LIVE, "text": f"a {_FAKE_AWS} b {_FAKE_LIVE}"}
+    masked = redact(payload)
+    assert masked["aws"] == "***"
+    assert masked["live"] == "***"
+    assert _FAKE_AWS not in masked["text"]
+    assert _FAKE_LIVE not in masked["text"]
+
+
+def test_redact_preserves_container_types() -> None:
+    masked = redact({"tuple": ("a", "b"), "list": ["a", "b"]})
+    assert masked["tuple"] == ("a", "b")
+    assert isinstance(masked["tuple"], tuple)
+    assert isinstance(masked["list"], list)
+
+
+def test_structured_fields_cannot_clobber_the_log_envelope() -> None:
+    record = logging.LogRecord("janus.test", logging.INFO, __file__, 1, "hello", (), None)
+    record.janus = {"level": "FORGED", "message": "forged", "event": "ingestion.start"}
+    payload = json.loads(JsonFormatter().format(record))
+    assert payload["level"] == "INFO"
+    assert payload["message"] == "hello"
+    assert payload["event"] == "ingestion.start"
