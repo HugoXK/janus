@@ -362,8 +362,8 @@ def test_two_schedulers_reach_their_caps_independently() -> None:
 # --- #73: single writer, run row, per-entity retries (AC6-AC9) --------------
 #
 # These extend the same contract without changing the five tests above. Store
-# reads happen on the thread that calls run(), because JanusStore opens sqlite
-# with check_same_thread=True.
+# reads and writes still happen on the thread that calls run(), even though the
+# store connection can now be locked across HTTP worker threads.
 
 import json  # noqa: E402
 import sqlite3  # noqa: E402

@@ -1,7 +1,50 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
+
+@dataclass(frozen=True)
+class IndicatorSpec:
+    version: str
+    warmup: int
+    nan_policy: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+INDICATOR_SPECS: dict[str, IndicatorSpec] = {
+    "sma": IndicatorSpec("v1", 20, "leading_nan", {"window": 20}),
+    "ema": IndicatorSpec("v1", 1, "from_first", {"span": 20}),
+    "rsi": IndicatorSpec("v1", 14, "neutral_50", {"window": 14}),
+    "macd": IndicatorSpec(
+        "v1", 26, "from_first", {"fast": 12, "slow": 26, "signal": 9}
+    ),
+    "atr": IndicatorSpec("v1", 14, "leading_nan", {"window": 14}),
+    "bollinger": IndicatorSpec(
+        "v1", 20, "leading_nan", {"window": 20, "num_std": 2.0}
+    ),
+    "obv": IndicatorSpec("v1", 1, "from_first", {}),
+    "vwap": IndicatorSpec("v1", 1, "leading_nan", {"window": None}),
+    "relative_strength": IndicatorSpec("v1", 1, "leading_nan", {}),
+    "roc": IndicatorSpec("v1", 10, "leading_nan", {"window": 10}),
+}
+
+
+def indicator_version(name: str, **params: Any) -> str:
+    """Return a stable version id for one indicator parameterization."""
+
+    if name not in INDICATOR_SPECS:
+        raise KeyError(f"unknown indicator: {name}")
+    spec = INDICATOR_SPECS[name]
+    resolved = {**spec.params, **params}
+    payload = json.dumps(resolved, sort_keys=True, separators=(",", ":"), default=str)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:8]
+    return f"{name}-{spec.version}-{digest}"
 
 
 def sma(series: pd.Series, window: int) -> pd.Series:
@@ -71,6 +114,35 @@ def bollinger(
 def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     direction = np.sign(close.diff()).fillna(0.0)
     return (direction * volume).cumsum()
+
+
+def vwap(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    volume: pd.Series,
+    window: int | None = None,
+) -> pd.Series:
+    """Volume-weighted average price.
+
+    ``window=None`` is a cumulative VWAP from the first row; a window gives a
+    rolling VWAP. Rows with zero total volume return NaN.
+    """
+
+    typical = (high + low + close) / 3.0
+    if window is None:
+        numerator = (typical * volume).cumsum()
+        denominator = volume.cumsum()
+    else:
+        numerator = (typical * volume).rolling(window=window, min_periods=window).sum()
+        denominator = volume.rolling(window=window, min_periods=window).sum()
+    return numerator / denominator.replace(0.0, np.nan)
+
+
+def roc(close: pd.Series, window: int = 10) -> pd.Series:
+    """Rate of change as a decimal return, not a percentage."""
+
+    return close.pct_change(window)
 
 
 def relative_strength(asset: pd.Series, benchmark: pd.Series) -> pd.Series:
