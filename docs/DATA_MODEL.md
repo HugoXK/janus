@@ -116,6 +116,15 @@ excerpt, optional byte offsets, and a blob hash tied to an observation.
 source, published time, URI/hash, locator, and excerpt hash. Migration v8 adds
 the table.
 
+## Snapshot archives
+
+`core/janus/memory/snapshot_archive.py` exports an as-of freeze as
+`manifest.json` plus `observations.json` and `features.json` (and Parquet when
+an optional writer is available). The manifest records row counts, per-file
+SHA-256 hashes, lineage, and a content hash. `verify_snapshot` detects tampering
+or missing files before `import_snapshot` writes into a fresh store. The CLI
+exposes `janus archive export/verify/import`.
+
 ## Retention and redaction
 
 `core/janus/memory/retention.py` applies source/kind retention windows and
