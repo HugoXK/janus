@@ -134,3 +134,34 @@ def test_db_cli_vacuum(tmp_path, monkeypatch) -> None:
     result = runner.invoke(app, ["db", "vacuum"])
     assert result.exit_code == 0, result.output
     assert "vacuum complete" in result.output
+
+
+def test_db_commands_open_encrypted_stores_through_the_loader(tmp_path) -> None:
+    import base64
+
+    db = tmp_path / "encrypted.db"
+    key = base64.b64encode(b"m" * 32).decode("ascii")
+    env = {"JANUS_MASTER_KEY": key}
+
+    initialized = runner.invoke(app, ["keys", "init", "--db", str(db)], env=env)
+    assert initialized.exit_code == 0, initialized.output
+
+    stats_result = runner.invoke(app, ["db", "stats", "--db", str(db), "--json"], env=env)
+    assert stats_result.exit_code == 0, stats_result.output
+    assert json.loads(stats_result.output)["exists"] is True
+
+    vacuumed = runner.invoke(app, ["db", "vacuum", "--db", str(db)], env=env)
+    assert vacuumed.exit_code == 0, vacuumed.output
+
+    saved = runner.invoke(
+        app, ["db", "backup", str(tmp_path / "encrypted-backup.db"), "--db", str(db)], env=env
+    )
+    assert saved.exit_code == 0, saved.output
+
+    denied = runner.invoke(
+        app, ["db", "stats", "--db", str(db)], env={"JANUS_MASTER_KEY": ""}
+    )
+    assert denied.exit_code == 1
+    combined = denied.output + getattr(denied, "stderr", "")
+    assert "error [key_missing]" in combined
+    assert "Traceback" not in combined

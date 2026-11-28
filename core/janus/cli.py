@@ -884,9 +884,8 @@ def db_backup(
 ) -> None:
     """Write a consistent SQLite backup."""
 
-    settings = load_settings()
     try:
-        target = backup(JanusStore(db or settings.database), out, force=force)
+        target = backup(_open_store(db), out, force=force)
     except FileExistsError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -899,9 +898,8 @@ def db_vacuum(
 ) -> None:
     """Reclaim unused SQLite space."""
 
-    settings = load_settings()
     try:
-        vacuum(JanusStore(db or settings.database))
+        vacuum(_open_store(db))
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -915,8 +913,7 @@ def db_stats(
 ) -> None:
     """Show row counts, file size, and schema version."""
 
-    settings = load_settings()
-    payload = stats(JanusStore(db or settings.database))
+    payload = stats(_open_store(db))
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
