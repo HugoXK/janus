@@ -23,14 +23,24 @@ DEFAULT_TIER = 0.5
 
 
 def source_tier(source: str, tiers: Optional[dict[str, float]] = None) -> float:
+    """Return the documented tier for a source.
+
+    The source prefix is case-insensitive and ``-``/``_``-insensitive, so
+    ``SEC-EDGAR`` and ``sec_edgar`` map to the same documented tier.
+    """
+
     table = {**SOURCE_TIERS, **(tiers or {})}
-    text = str(source).split(":")[0].lower()
+    text = str(source).split(":")[0].strip().lower().replace("-", "_")
     return float(table.get(text, DEFAULT_TIER))
 
 
 def conflict_key(observation: Observation) -> Optional[tuple[str, str, str]]:
     value = observation.value
-    fact = value.get("fact") or value.get("metric") or value.get("field")
+    fact: Any = None
+    for candidate in ("fact", "metric", "field"):
+        if value.get(candidate) is not None:
+            fact = value[candidate]
+            break
     if fact is None:
         return None
     return (observation.entity_id, observation.kind.value, str(fact))
@@ -91,6 +101,10 @@ def detect_conflicts(
 
     Sources with no ``fact``/``metric``/``field`` key are ignored: two unrelated
     headlines are not a conflict. Both sides of a conflict are always retained.
+    ``values`` keeps one entry per observation, so corroborating duplicates
+    repeat; compare normalized values to count distinct positions. Equality is
+    over the whole value payload: auxiliary keys such as ``note`` define the
+    fact too.
     """
 
     grouped: dict[tuple[str, str, str], list[Observation]] = {}
@@ -189,10 +203,17 @@ class OverrideRecord:
 
 
 class OverrideStore:
-    """Append-only JSONL audit for human conflict overrides."""
+    """Append-only JSONL audit for human conflict overrides.
+
+    Single-writer contract: ``record()`` appends one JSON line per call without
+    an advisory lock, so callers must serialize writers for the same path.
+    Readers skip unparseable lines (for example a truncated final line) and
+    report how many were skipped through ``skipped_lines``.
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
+        self.skipped_lines = 0
 
     def record(
         self,
@@ -234,12 +255,17 @@ class OverrideStore:
         if not self.path.exists():
             return []
         records = []
+        skipped = 0
         for line in self.path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            payload = json.loads(line)
-            payload["alternatives"] = tuple(payload.get("alternatives", ()))
-            records.append(OverrideRecord(**payload))
+            try:
+                payload = json.loads(line)
+                payload["alternatives"] = tuple(payload.get("alternatives", ()))
+                records.append(OverrideRecord(**payload))
+            except (json.JSONDecodeError, TypeError, KeyError, ValueError):
+                skipped += 1
+        self.skipped_lines = skipped
         return records
 
     def latest(
@@ -263,6 +289,20 @@ def apply_override(
         or group.fact_key != override.fact_key
     ):
         raise ValueError("override does not match this conflict group")
+    known = {value.observation_id for value in group.values}
+    if override.selected_observation_id not in known:
+        return ConflictGroup(
+            entity_id=group.entity_id,
+            kind=group.kind,
+            fact_key=group.fact_key,
+            values=group.values,
+            selected_id=None,
+            resolution="stale",
+            reason=(
+                f"stale override: {override.selected_observation_id} "
+                "is not part of this conflict"
+            ),
+        )
     return ConflictGroup(
         entity_id=group.entity_id,
         kind=group.kind,

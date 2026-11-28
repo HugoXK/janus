@@ -147,3 +147,69 @@ def test_unkeyed_observations_do_not_conflict() -> None:
         raw_hash="news",
     )
     assert detect_conflicts([no_key, no_key]) == []
+
+
+def test_source_tier_normalizes_case_and_separators() -> None:
+    assert source_tier("SEC-EDGAR") == 1.0
+    assert source_tier("Sec-Edgar:filing") == 1.0
+    assert source_tier("FRED") == 0.95
+
+
+def test_number_zero_fact_key_is_still_a_fact() -> None:
+    groups = detect_conflicts(
+        [
+            _obs("a", "rss", 1.0, fact=0),
+            _obs("b", "sec_edgar", 2.0, fact=0),
+        ]
+    )
+    assert len(groups) == 1
+    assert groups[0].fact_key == "0"
+
+
+def test_stale_override_is_not_applied(tmp_path) -> None:
+    original = _group([_obs("a", "rss", 1.0), _obs("b", "rss", 2.0)])
+    store = OverrideStore(tmp_path / "overrides.jsonl")
+    record = store.record(
+        original, selected_observation_id="b", actor="alice", reason="manual review"
+    )
+
+    rebuilt = _group([_obs("a", "rss", 1.0), _obs("c", "sec_edgar", 2.0)])
+    applied = apply_override(rebuilt, record)
+
+    assert applied.resolution == "stale"
+    assert applied.selected_id is None
+    assert "stale override: b is not part of this conflict" in applied.reason
+
+
+def test_audit_skips_unparseable_lines_and_reports_count(tmp_path) -> None:
+    path = tmp_path / "overrides.jsonl"
+    store = OverrideStore(path)
+    first = store.record(
+        _group([_obs("a", "rss", 1.0), _obs("b", "rss", 2.0)]),
+        selected_observation_id="a",
+        actor="alice",
+        reason="first",
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("not-json\n")
+    second = store.record(
+        _group([_obs("c", "rss", 1.0), _obs("d", "rss", 2.0)]),
+        selected_observation_id="c",
+        actor="alice",
+        reason="second",
+    )
+
+    records = store.list()
+    assert [record.id for record in records] == [first.id, second.id]
+    assert store.skipped_lines == 1
+    assert store.latest("ACME", "fundamental", "eps") == second
+
+
+def test_auxiliary_payload_keys_define_the_fact() -> None:
+    first = _obs("a", "rss", 1.0)
+    first.value["note"] = "restated"
+    second = _obs("b", "sec_edgar", 1.0)
+
+    group = _group([first, second])
+    assert {value.observation_id for value in group.values} == {"a", "b"}
+    assert group.selected_id == "b"
