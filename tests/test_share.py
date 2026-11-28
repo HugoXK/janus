@@ -48,8 +48,8 @@ def test_approval_signs_and_verifies() -> None:
     assert approved.status == "approved"
     assert approved.approved_by == "bob"
     assert approved.envelope is not None
-    assert signer.verify(approved.envelope)
-    assert service.verify(approved.envelope)
+    assert signer.verify(approved.envelope, request_id=request.id)
+    assert service.verify(approved.envelope, request_id=request.id)
     assert approved.envelope["as_of"].startswith("2026-01-01")
     assert approved.envelope["snapshot_hash"] == "snap-abc"
     assert approved.envelope["identity"]["key_id"] == "bot-social"
@@ -80,11 +80,21 @@ def test_tampering_or_wrong_identity_fails_verification() -> None:
     assert envelope is not None
 
     tampered = {**envelope, "payload": {"prediction_id": "p1", "probability": 0.1}}
-    assert signer.verify(tampered) is False
+    assert signer.verify(tampered, request_id=request.id) is False
 
-    assert ShareSigner("different", key_id="bot-social").verify(envelope) is False
-    assert ShareSigner("test-secret", key_id="other").verify(envelope) is False
-    assert signer.verify({**envelope, "signature": "0" * 64}) is False
+    assert (
+        ShareSigner("different", key_id="bot-social").verify(
+            envelope, request_id=request.id
+        )
+        is False
+    )
+    assert (
+        ShareSigner("test-secret", key_id="other").verify(
+            envelope, request_id=request.id
+        )
+        is False
+    )
+    assert signer.verify({**envelope, "signature": "0" * 64}, request_id=request.id) is False
 
 
 def test_rejection_is_audited_and_blocks_approval() -> None:
@@ -123,3 +133,53 @@ def test_request_validation_and_missing_request() -> None:
 def test_signer_rejects_empty_secret() -> None:
     with pytest.raises(ValueError, match="secret"):
         ShareSigner("")
+
+
+def test_envelope_is_bound_to_the_request_and_the_approver() -> None:
+    _, service, signer = _service()
+    first = _request(service)
+    second = service.request(
+        kind="forecast",
+        payload={"prediction_id": "p1", "probability": 0.7},  # same payload
+        as_of=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        snapshot_hash="snap-abc",
+        requested_by="alice",
+    )
+    envelope = service.approve(first.id, approver="bob").envelope
+    assert envelope is not None
+    assert envelope["request_id"] == first.id
+    assert envelope["approval"]["approved_by"] == "bob"
+    assert envelope["approval"]["approved_at"]
+
+    # The same envelope cannot be replayed onto another request with the same
+    # payload, as_of and snapshot hash.
+    assert signer.verify(envelope, request_id=second.id) is False
+    with pytest.raises(ValueError, match="invalid or bound to another request"):
+        signer.require_valid(envelope, request_id=second.id)
+
+    # A second approver cannot silently adopt someone else's approval.
+    with pytest.raises(ValueError, match="already approved by 'bob'"):
+        service.approve(first.id, approver="mallory")
+
+
+def test_share_audit_is_append_only() -> None:
+    import sqlite3
+
+    store, service, _ = _service()
+    request = _request(service)
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        store.connection.execute("UPDATE share_audit SET actor = 'someone-else'")
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        store.connection.execute("DELETE FROM share_audit")
+    assert [row["action"] for row in service.audit_trail(request.id)] == ["requested"]
+
+
+def test_non_finite_payloads_are_rejected() -> None:
+    _, service, _ = _service()
+    with pytest.raises(ValueError):
+        service.request(
+            kind="thesis",
+            payload={"value": float("nan")},
+            as_of=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            snapshot_hash="snap",
+        )

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from ..memory.models import utcnow
 from ..memory.store import JanusStore
-from .signing import ShareSigner, payload_hash
+from .signing import ShareSigner, canonical_json, payload_hash
 
 DISCLAIMER = "Janus is research tooling, not investment advice."
 
@@ -65,7 +65,11 @@ class ShareRequest:
             payload_hash=payload_hash(self.payload),
             requested_by=self.requested_by,
             status=self.status,
-            warnings=(DISCLAIMER, "The payload will be signed at approval time."),
+            warnings=(
+                DISCLAIMER,
+                "The payload will be signed at approval time.",
+                "The snapshot hash is a claim; it is not verified against a snapshot row.",
+            ),
         )
 
 
@@ -91,6 +95,7 @@ class ShareService:
     ) -> ShareRequest:
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
+        canonical_json(payload)  # reject NaN/Infinity before anything is stored
         if not kind:
             raise ValueError("kind must not be empty")
         if not snapshot_hash:
@@ -164,44 +169,63 @@ class ShareService:
         signer = signer or self.signer
         if signer is None:
             raise ValueError("a share signer is required for approval")
-        request = self.get(request_id)
-        if request.status == "approved":
-            return request
-        if request.status == "rejected":
-            raise ValueError(f"share request was rejected: {request_id}")
-        envelope = signer.build_envelope(
-            kind=request.kind,
-            payload=request.payload,
-            as_of=request.as_of,
-            snapshot_hash=request.snapshot_hash,
-        )
-        approved_at = utcnow().isoformat()
-        self.store.connection.execute(
-            """
-            UPDATE share_request
-            SET status = 'approved', approved_by = ?, approved_at = ?, envelope = ?
-            WHERE id = ?
-            """,
-            (approver, approved_at, json.dumps(envelope, sort_keys=True, default=str), request_id),
-        )
-        self._audit(
-            request_id,
-            action="approved",
-            actor=approver,
-            detail={"payload_hash": payload_hash(request.payload)},
-        )
-        self.store.connection.commit()
+        with self.store.locked():
+            request = self.get(request_id)
+            if request.status == "approved":
+                if request.approved_by == approver:
+                    return request
+                raise ValueError(
+                    f"share request was already approved by {request.approved_by!r}"
+                )
+            if request.status == "rejected":
+                raise ValueError(f"share request was rejected: {request_id}")
+            approved_at = utcnow().isoformat()
+            envelope = signer.build_envelope(
+                kind=request.kind,
+                payload=request.payload,
+                as_of=request.as_of,
+                snapshot_hash=request.snapshot_hash,
+                request_id=request.id,
+                approved_by=approver,
+                approved_at=approved_at,
+            )
+            cursor = self.store.connection.execute(
+                """
+                UPDATE share_request
+                SET status = 'approved', approved_by = ?, approved_at = ?, envelope = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (
+                    approver,
+                    approved_at,
+                    json.dumps(envelope, sort_keys=True, default=str),
+                    request_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(
+                    f"share request is no longer pending: {request_id}"
+                )
+            self._audit(
+                request_id,
+                action="approved",
+                actor=approver,
+                detail={"payload_hash": payload_hash(request.payload)},
+            )
+            self.store.connection.commit()
         return self.get(request_id)
 
     def reject(self, request_id: str, *, approver: str, reason: str = "") -> ShareRequest:
         request = self.get(request_id)
         if request.status != "pending":
             raise ValueError(f"share request is not pending: {request.status}")
-        self.store.connection.execute(
+        cursor = self.store.connection.execute(
             "UPDATE share_request SET status = 'rejected', approved_by = ?, "
-            "approved_at = ? WHERE id = ?",
+            "approved_at = ? WHERE id = ? AND status = 'pending'",
             (approver, utcnow().isoformat(), request_id),
         )
+        if cursor.rowcount != 1:
+            raise ValueError(f"share request is no longer pending: {request_id}")
         self._audit(
             request_id,
             action="rejected",
@@ -212,12 +236,18 @@ class ShareService:
         return self.get(request_id)
 
     def verify(
-        self, envelope: dict[str, Any], *, signer: Optional[ShareSigner] = None
+        self,
+        envelope: dict[str, Any],
+        *,
+        request_id: str,
+        signer: Optional[ShareSigner] = None,
     ) -> bool:
         signer = signer or self.signer
         if signer is None:
             raise ValueError("a share signer is required for verification")
-        return signer.verify(envelope)
+        if not request_id:
+            raise ValueError("request_id is required to verify a share envelope")
+        return signer.verify(envelope, request_id=request_id)
 
     def audit_trail(self, request_id: str) -> List[dict[str, Any]]:
         rows = self.store.connection.execute(

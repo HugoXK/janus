@@ -362,8 +362,8 @@ def test_two_schedulers_reach_their_caps_independently() -> None:
 # --- #73: single writer, run row, per-entity retries (AC6-AC9) --------------
 #
 # These extend the same contract without changing the five tests above. Store
-# reads happen on the thread that calls run(), because JanusStore opens sqlite
-# with check_same_thread=True.
+# reads and writes still happen on the thread that calls run(), even though the
+# store connection can now be locked across HTTP worker threads.
 
 import json  # noqa: E402
 import sqlite3  # noqa: E402
@@ -693,3 +693,46 @@ def test_retries_stay_per_entity_sequential() -> None:
     assert (result.failed, result.dead_letters) == (0, 0)
     assert source.calls == {"RETRY": 2, "PEER": 1}
     assert source.max_in_flight == {"RETRY": 1, "PEER": 1}
+
+
+def test_store_failure_becomes_a_dead_letter(monkeypatch) -> None:
+    store = JanusStore(":memory:")
+    start, end = _window()
+    scheduler = IngestionScheduler(store, retries=0)
+
+    def boom(observation):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(store, "insert_observation", boom)
+    result = scheduler.run(FakeSource(), ["ACME"], start, end)
+
+    assert result.fetched == 1
+    assert result.stored == 0
+    assert result.failed == 1
+    assert result.dead_letters == 1
+    row = store.connection.execute(
+        "SELECT status, counts FROM ingestion_run WHERE id = ?", (result.run_id,)
+    ).fetchone()
+    assert row["status"] == "partial"
+    assert "disk full" in store.connection.execute(
+        "SELECT error FROM ingestion_dead_letter"
+    ).fetchone()["error"]
+
+
+def test_store_failure_is_contained_in_pooled_mode(monkeypatch) -> None:
+    store = JanusStore(":memory:")
+    start, end = _window()
+    scheduler = IngestionScheduler(store, retries=0, max_concurrency=2)
+
+    def boom(observation):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(store, "insert_observation", boom)
+    result = scheduler.run(FakeSource(), ["A", "B"], start, end)
+
+    assert (result.fetched, result.stored, result.failed, result.dead_letters) == (
+        2,
+        0,
+        2,
+        2,
+    )

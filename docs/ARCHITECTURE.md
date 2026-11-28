@@ -62,6 +62,7 @@ core/janus/
   persona/       profile vector and master priors
   eval/          BeliefBench and walk-forward skeleton
   share/         approval-first signed sharing
+  share/         approval-first signed sharing
   mcp/           optional MCP server
   cli.py         local CLI
   demo.py        offline end-to-end demo

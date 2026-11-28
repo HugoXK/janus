@@ -120,6 +120,9 @@ No performance claims yet. The scaffold proves the invariants:
 | As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
 | Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
 | Entity graph resolves ticker, CIK, and names | `tests/test_entities.py` |
+| Security master and universe membership are point-in-time | `tests/test_security_master.py` |
+| Corporate actions drive an explicit, replayable price adjustment | `tests/test_corporate_actions.py` |
+| Citations resolve to exact source spans, not summaries | `tests/test_source_spans.py` |
 | Provenance trace and as-of search | `tests/test_provenance.py` |
 | yfinance maps adjusted close | `tests/test_yfinance.py` |
 | FRED latest and ALFRED vintage | `tests/test_fred.py` |
@@ -136,8 +139,19 @@ No performance claims yet. The scaffold proves the invariants:
 | MCP service round-trip | `tests/test_mcp_service.py` |
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
-| Retries, dead letters, and replay | `tests/test_scheduler.py` |
-| Sharing needs approval, signs the payload, and audits the decision | `tests/test_share.py` |
+| Retries, dead letters, replay, and contained store failures | `tests/test_scheduler.py` |
+| Counterfactual replay and persona tournaments are deterministic | `tests/test_counterfactual.py`, `tests/test_persona_tournament.py` |
+| Blobs are content-addressed and GC keeps referenced payloads | `tests/test_blob.py` |
+| Quantile/scenario tools are exposed through the MCP service | `tests/test_forecast_interface.py` |
+| Quantiles, scenarios, and walk-forward costs/leaks are tested | `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py` |
+| Brief/snapshot CLI commands are scriptable | `tests/test_cli_brief_snapshot.py` |
+| Local API exposes request metrics and X-Request-ID | `tests/test_server.py` |
+| Local JSON API publishes an OpenAPI contract | `tests/test_server.py` |
+| DSH dock/cron reads the local JSON panel API | `tests/test_server.py` |
+| Shared SQLite access is serialized across worker threads | `tests/test_store_threading.py` |
+| Conflicting facts keep both sides and resolve by an audited policy | `tests/test_conflicts.py` |
+| Fundamentals are as-filed, provenance-linked, and event flags cite ids | `tests/test_fundamentals.py` |
+| Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
@@ -277,6 +291,13 @@ This demo is research tooling, not investment advice.
 
 The numbers come from a toy sample. They demonstrate the mechanics, not skill.
 
+## Command-line quickstart
+
+```bash
+janus brief AAPL --json
+janus snapshot AAPL --as-of 2026-01-02T00:00:00+00:00 --out snap.json
+```
+
 ## Data sources
 
 Free by default; paid providers are optional enhancements. Respect every
@@ -318,8 +339,7 @@ examples/        offline demo entry point
 
 ## Roadmap
 
-The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md). The v0.1.0
-release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
+The full 50-issue plan lives in [docs/BACKLOG.md](docs/BACKLOG.md). The v0.1.0 release plan is in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
 
 - [x] Repository scaffold
 - [x] Domain contracts and JSON Schema

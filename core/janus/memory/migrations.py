@@ -198,6 +198,155 @@ MIGRATIONS: list[Migration] = [
     ),
     Migration(
         version=6,
+        name="security_master",
+        sql="""
+        CREATE TABLE IF NOT EXISTS security (
+            id           TEXT PRIMARY KEY,
+            entity_id    TEXT NOT NULL,
+            symbol       TEXT NOT NULL,
+            exchange     TEXT NOT NULL DEFAULT '',
+            currency     TEXT NOT NULL DEFAULT '',
+            share_class  TEXT NOT NULL DEFAULT '',
+            valid_from   TEXT NOT NULL,
+            valid_to     TEXT,
+            source       TEXT NOT NULL DEFAULT 'manual'
+        );
+        CREATE INDEX IF NOT EXISTS idx_security_symbol
+            ON security(symbol, valid_from, valid_to);
+        CREATE INDEX IF NOT EXISTS idx_security_entity
+            ON security(entity_id);
+
+        CREATE TABLE IF NOT EXISTS universe_membership (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            universe     TEXT NOT NULL,
+            security_id  TEXT NOT NULL,
+            valid_from   TEXT NOT NULL,
+            valid_to     TEXT,
+            source       TEXT NOT NULL DEFAULT 'manual',
+            FOREIGN KEY(security_id) REFERENCES security(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_universe_membership
+            ON universe_membership(universe, valid_from, valid_to);
+        CREATE INDEX IF NOT EXISTS idx_universe_security
+            ON universe_membership(security_id);
+        """,
+    ),
+    Migration(
+        version=7,
+        name="corporate_actions",
+        sql="""
+        CREATE TABLE IF NOT EXISTS corporate_action (
+            id                   TEXT PRIMARY KEY,
+            security_id          TEXT NOT NULL,
+            action_type          TEXT NOT NULL,
+            effective_at         TEXT NOT NULL,
+            ratio                REAL,
+            cash_amount          REAL,
+            currency             TEXT NOT NULL DEFAULT '',
+            related_security_id  TEXT,
+            source               TEXT NOT NULL DEFAULT 'manual',
+            raw_hash             TEXT NOT NULL DEFAULT '',
+            payload              TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_corporate_action_security
+            ON corporate_action(security_id, effective_at);
+        """,
+    ),
+    Migration(
+        version=8,
+        name="source_spans",
+        sql="""
+        CREATE TABLE IF NOT EXISTS source_span (
+            id             TEXT PRIMARY KEY,
+            observation_id TEXT NOT NULL,
+            blob_hash      TEXT NOT NULL,
+            locator        TEXT NOT NULL,
+            excerpt        TEXT NOT NULL,
+            start_offset   INTEGER,
+            end_offset     INTEGER,
+            source         TEXT NOT NULL DEFAULT 'manual',
+            created_at     TEXT NOT NULL,
+            FOREIGN KEY(observation_id) REFERENCES observation(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_span_observation
+            ON source_span(observation_id, locator);
+        """,
+    ),
+    Migration(
+        version=9,
+        name="audit_chain",
+        sql="""
+        CREATE TABLE IF NOT EXISTS audit_entry (
+            seq          INTEGER PRIMARY KEY,
+            kind         TEXT NOT NULL,
+            ref_id       TEXT NOT NULL,
+            recorded_at  TEXT NOT NULL,
+            payload      TEXT NOT NULL,
+            prev_hash    TEXT NOT NULL,
+            entry_hash   TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_entry_kind
+            ON audit_entry(kind, seq);
+        CREATE TRIGGER IF NOT EXISTS audit_entry_no_update
+        BEFORE UPDATE ON audit_entry
+        BEGIN
+            SELECT RAISE(ABORT, 'audit_entry is append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS audit_entry_no_delete
+        BEFORE DELETE ON audit_entry
+        BEGIN
+            SELECT RAISE(ABORT, 'audit_entry is append-only');
+        END;
+        """,
+    ),
+    Migration(
+        version=10,
+        name="mcp_scoped_auth",
+        sql="""
+        CREATE TABLE IF NOT EXISTS mcp_approval (
+            id            TEXT PRIMARY KEY,
+            caller_id     TEXT NOT NULL,
+            tool          TEXT NOT NULL,
+            argument_hash TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            expires_at    TEXT NOT NULL,
+            decision      TEXT NOT NULL DEFAULT 'pending',
+            decided_by    TEXT,
+            decided_at    TEXT,
+            executed_at   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_approval_lookup
+            ON mcp_approval(caller_id, tool, argument_hash, created_at);
+
+        CREATE TABLE IF NOT EXISTS mcp_audit (
+            seq           INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorded_at   TEXT NOT NULL,
+            caller_id     TEXT NOT NULL,
+            tool          TEXT NOT NULL,
+            decision      TEXT NOT NULL,
+            code          TEXT,
+            argument_hash TEXT,
+            approval_id   TEXT,
+            detail        TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_audit_recorded
+            ON mcp_audit(recorded_at, seq);
+
+        CREATE TRIGGER IF NOT EXISTS trg_mcp_audit_no_update
+        BEFORE UPDATE ON mcp_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'mcp_audit is append-only');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mcp_audit_no_delete
+        BEFORE DELETE ON mcp_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'mcp_audit is append-only');
+        END;
+        """,
+    ),
+    Migration(
+        version=11,
         name="sharing",
         sql="""
         CREATE TABLE IF NOT EXISTS share_request (
@@ -227,6 +376,18 @@ MIGRATIONS: list[Migration] = [
         );
         CREATE INDEX IF NOT EXISTS idx_share_audit_request
             ON share_audit(request_id, id);
+
+        CREATE TRIGGER IF NOT EXISTS trg_share_audit_no_update
+        BEFORE UPDATE ON share_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'share_audit is append-only');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_share_audit_no_delete
+        BEFORE DELETE ON share_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'share_audit is append-only');
+        END;
         """,
     ),
 ]

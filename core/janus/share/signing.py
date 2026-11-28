@@ -15,7 +15,16 @@ class ShareVerificationError(ValueError):
 
 
 def canonical_json(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    # ``allow_nan=False`` keeps the signed bytes valid RFC-8259 JSON: a NaN or
+    # Infinity payload raises instead of producing an envelope no other JSON
+    # implementation can read.
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+        allow_nan=False,
+    )
 
 
 def payload_hash(payload: Any) -> str:
@@ -56,18 +65,30 @@ class ShareSigner:
         payload: Any,
         as_of: datetime | str,
         snapshot_hash: str,
+        request_id: str,
+        approved_by: str,
+        approved_at: datetime | str,
     ) -> dict[str, Any]:
         if not kind:
             raise ValueError("kind must not be empty")
         if not snapshot_hash:
             raise ValueError("snapshot_hash must not be empty")
+        if not request_id:
+            raise ValueError("request_id must not be empty")
+        if not approved_by:
+            raise ValueError("approved_by must not be empty")
         body = {
             "version": SHARE_VERSION,
             "kind": str(kind),
+            "request_id": str(request_id),
             "as_of": _parse_time(as_of).isoformat(),
             "snapshot_hash": str(snapshot_hash),
             "payload_hash": payload_hash(payload),
             "payload": payload,
+            "approval": {
+                "approved_by": str(approved_by),
+                "approved_at": _parse_time(approved_at).isoformat(),
+            },
             "identity": {
                 "key_id": self.key_id,
                 "algorithm": SIGNATURE_ALGORITHM,
@@ -80,10 +101,14 @@ class ShareSigner:
             raise ValueError("body already contains a signature")
         return {**body, "signature": self._sign(body)}
 
-    def verify(self, envelope: dict[str, Any]) -> bool:
+    def verify(self, envelope: dict[str, Any], *, request_id: str) -> bool:
+        """Verify an envelope and bind it to the request it was issued for."""
+
         if not isinstance(envelope, dict):
             return False
         if envelope.get("version") != SHARE_VERSION:
+            return False
+        if not request_id or envelope.get("request_id") != request_id:
             return False
         identity = envelope.get("identity")
         if not isinstance(identity, dict):
@@ -101,9 +126,9 @@ class ShareSigner:
             return False
         return body.get("payload_hash") == payload_hash(body.get("payload"))
 
-    def require_valid(self, envelope: dict[str, Any]) -> dict[str, Any]:
-        if not self.verify(envelope):
-            raise ShareVerificationError("share signature is invalid")
+    def require_valid(self, envelope: dict[str, Any], *, request_id: str) -> dict[str, Any]:
+        if not self.verify(envelope, request_id=request_id):
+            raise ShareVerificationError("share signature is invalid or bound to another request")
         return envelope
 
     def _sign(self, body: dict[str, Any]) -> str:
