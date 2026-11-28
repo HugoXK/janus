@@ -3,7 +3,9 @@
 This file is the context handoff for a new session. It describes the current
 repository state, what is merged, what is open, and the exact review/merge
 procedure. **Do not commit tokens or secrets.** The owner has provided GitHub
-tokens in chat; set them only as environment variables for a command.
+tokens in chat; the live values are in the local-only, gitignored
+`HANDOFF.local.md` on this workspace, and must only be used as environment
+variables for a command.
 
 ## Current state
 
