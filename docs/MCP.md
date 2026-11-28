@@ -43,6 +43,7 @@ The default store is the configured SQLite database. Tests inject
 | `janus_mcp_approval_decide` | Approve or deny a pending write (admin scope) |
 | `janus_scenario_tree` | Generate an up/base/down tree with falsifiers |
 | `janus_quantile_forecast` | Empirical 10/50/90 return quantiles |
+| `janus_quality` | Duplicate/provenance/price/staleness checks for one as-of view |
 
 ## Resources
 

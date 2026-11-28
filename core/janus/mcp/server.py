@@ -44,6 +44,7 @@ TOOLS = [
     "janus_adjust_price",
     "janus_source_spans",
     "janus_source_citation",
+    "janus_quality",
     "janus_persona_list",
     "janus_beliefbench_run",
     "janus_counterfactual_replay",
@@ -398,6 +399,16 @@ def build_server(
     def janus_mcp_approval_decide(approval_id: str, decision: str) -> Any:
         """Approve or deny a pending write approval (admin scope)."""
         return service.decide_approval(approval_id, decision)
+
+    @server.tool()
+    @_guarded
+    def janus_quality(
+        entity_id: str, as_of: str, limit: int = 500, max_age_days: int = 7
+    ) -> dict[str, Any]:
+        """Run data-quality checks over one entity's newest as-of observations."""
+        return service.quality_report(
+            entity_id, as_of, limit=limit, max_age_days=max_age_days
+        )
 
     @server.resource("janus://entities")
     @_guarded_json

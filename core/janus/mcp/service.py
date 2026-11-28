@@ -316,6 +316,44 @@ class JanusService:
         self.require_read("janus_calibrate")
         return asdict(CalibrationService.from_store(self.store))
 
+    def quality_report(
+        self,
+        entity_id: str,
+        as_of: str | datetime,
+        *,
+        limit: Optional[int] = 500,
+        max_age_days: int = 7,
+    ) -> dict[str, Any]:
+        self.require_read("janus_quality")
+        from ..data.quality import check_observations
+        from ..memory.models import Observation
+
+        stamp = _parse_time(as_of)
+        if limit is not None and not 1 <= limit <= 5000:
+            raise ValueError("limit must be between 1 and 5000")
+        rows = self.as_of_query(entity_id, stamp)
+        observations = [Observation.model_validate(row) for row in rows]
+        truncated = limit is not None and len(observations) > limit
+        if truncated and limit is not None:
+            observations = observations[-limit:]
+        report = check_observations(
+            observations, as_of=stamp, max_age_days=max_age_days
+        )
+        window = {
+            "from": observations[0].published_at.isoformat() if observations else None,
+            "to": observations[-1].published_at.isoformat() if observations else None,
+        }
+        return {
+            "entity_id": entity_id,
+            "as_of": stamp.isoformat(),
+            "checked": report.checked,
+            "limit": limit,
+            "truncated": truncated,
+            "window": window,
+            "errors": [asdict(issue) for issue in report.errors],
+            "warnings": [asdict(issue) for issue in report.warnings],
+        }
+
     def provenance_trace(self, observation_id: str) -> dict[str, Any]:
         self.require_read("janus_provenance_trace")
         from ..memory.provenance import ProvenanceTracer
@@ -492,6 +530,7 @@ class JanusService:
         trend: float = 0.0,
         evidence: Optional[list[str]] = None,
     ) -> dict[str, Any]:
+        self.require_read("janus_scenario_tree")
         from ..forecast.scenarios import generate_scenario_tree
 
         tree = generate_scenario_tree(
@@ -508,6 +547,7 @@ class JanusService:
     def quantile_forecast(
         self, returns: list[float], *, horizon: int = 1
     ) -> dict[str, Any]:
+        self.require_read("janus_quantile_forecast")
         from ..forecast.quantiles import EmpiricalQuantileModel
 
         forecast = EmpiricalQuantileModel().fit(returns).predict(horizon=horizon)

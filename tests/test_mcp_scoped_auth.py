@@ -421,3 +421,47 @@ def test_entity_reads_require_read_scope_and_are_audited() -> None:
         reader.resolve_entity("missing")
     with pytest.raises(KeyError):
         reader.get_entity("missing")
+
+
+def test_forecast_reads_require_read_scope_and_are_audited() -> None:
+    store = JanusStore(":memory:")
+    blind = JanusService(
+        store,
+        authorizer=Authorizer(
+            store,
+            tokens=_registry({"id": "blind", "token": "blind-token", "scopes": ["write"]}),
+            caller_token="blind-token",
+            write_approvals_enabled=True,
+            clock=Clock(),
+        ),
+    )
+    _expect(
+        "scope_denied",
+        blind.scenario_tree,
+        entity_id="ACME",
+        horizon="1M",
+        as_of="2026-01-01T00:00:00+00:00",
+        direction_probability=0.5,
+    )
+    _expect("scope_denied", blind.quantile_forecast, [0.01, -0.02, 0.03])
+
+    rows = AuditLedger(store).query()
+    assert [row["tool"] for row in rows] == [
+        "janus_scenario_tree",
+        "janus_quantile_forecast",
+    ]
+    assert {row["decision"] for row in rows} == {"denied"}
+
+    reader_store = JanusStore(":memory:")
+    reader = JanusService(
+        reader_store, authorizer=_authorizer(reader_store, "reader-token")
+    )
+    tree = reader.scenario_tree(
+        entity_id="ACME",
+        horizon="1M",
+        as_of="2026-01-01T00:00:00+00:00",
+        direction_probability=0.5,
+    )
+    assert tree
+    quantiles = reader.quantile_forecast([0.01, -0.02, 0.03])
+    assert quantiles["width"] >= 0

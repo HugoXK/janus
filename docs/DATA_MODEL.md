@@ -140,6 +140,12 @@ naive `--as-of` so a destructive cutoff cannot silently use the host time zone.
 Retention deletes observation rows but leaves their content-addressed blobs on
 disk. Run `janus blob gc` afterwards when the raw documents were meant to age
 out as well.
+## Maintenance
+
+`core/janus/memory/maintenance.py` wraps `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check`, the SQLite backup API, `VACUUM`, and per-table row
+counts. The CLI exposes `janus db check|backup|vacuum|stats`; backups are written
+through SQLite's online backup API so the copy is consistent.
 
 ## As-of semantics
 
