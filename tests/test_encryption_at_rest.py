@@ -33,7 +33,7 @@ from janus.memory.encryption_service import (
     status,
 )
 from janus.memory.models import Observation, ObservationKind, Outcome, Prediction, Thesis, ThesisStatus
-from janus.memory.store import JanusStore
+from janus.memory.store import JanusStore, open_store
 
 MASTER = b"m" * 32
 OTHER_MASTER = b"x" * 32
@@ -641,3 +641,43 @@ def test_key_ids_cannot_contain_the_envelope_separator(tmp_path: Path) -> None:
     with pytest.raises(CiphertextInvalidError):
         sealer.unseal(dotted)
     store.close()
+
+
+def test_cli_reads_an_encrypted_store_with_only_the_env_key(tmp_path: Path) -> None:
+    db = tmp_path / "janus.db"
+    runner = CliRunner()
+    env = {"JANUS_MASTER_KEY": MASTER_B64}
+
+    result = runner.invoke(app, ["keys", "init", "--db", str(db)], env=env)
+    assert result.exit_code == 0, result.output
+
+    # A normal command, not `janus keys`, must open the encrypted store.
+    ok = runner.invoke(app, ["brief", "ACME", "--db", str(db)], env=env)
+    assert ok.exit_code == 0, ok.output + getattr(ok, "stderr", "")
+
+    bad = runner.invoke(
+        app, ["brief", "ACME", "--db", str(db)], env={"JANUS_MASTER_KEY": ""}
+    )
+    assert bad.exit_code == 1
+    combined = bad.output + getattr(bad, "stderr", "")
+    assert "error [key_missing]" in combined
+    assert "Traceback" not in combined
+
+
+def test_open_store_does_not_turn_a_plaintext_store_into_an_encrypted_one(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "plain.db"
+    store = open_store(db, environ={"JANUS_MASTER_KEY": MASTER_B64})
+    assert not store.encryption_enabled
+    count = store.connection.execute("SELECT COUNT(*) FROM encryption_key").fetchone()[0]
+    assert int(count) == 0
+    store.close()
+
+
+def test_open_store_reports_a_typed_error_without_the_key(tmp_path: Path) -> None:
+    db = tmp_path / "janus.db"
+    _seeded_store(db).close()
+    with pytest.raises(KeyMissingError) as excinfo:
+        open_store(db, environ={})
+    assert excinfo.value.code == "key_missing"

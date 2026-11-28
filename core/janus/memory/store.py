@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
-from .encryption import KeyManager, KeyMissingError, Sealer, field_context
+from .encryption import KeyManager, KeyMissingError, Sealer, field_context, load_master_key
 from .migrations import apply_migrations, current_version
 from .models import (
     Observation,
@@ -76,6 +76,26 @@ def _synchronized(method):
             return method(self, *args, **kwargs)
 
     return wrapper
+
+
+def open_store(
+    path: Union[str, Path] = ":memory:",
+    *,
+    master_key: Optional[bytes] = None,
+    environ: Optional[dict[str, str]] = None,
+) -> "JanusStore":
+    """Open a store, using the environment master key only when it is encrypted.
+
+    A plaintext store stays plaintext even when ``JANUS_MASTER_KEY`` is set: the
+    key is loaded lazily after the store reports that it needs one.
+    """
+
+    if master_key is not None:
+        return JanusStore(path, master_key=master_key)
+    try:
+        return JanusStore(path)
+    except KeyMissingError:
+        return JanusStore(path, master_key=load_master_key(environ))
 
 
 class JanusStore:

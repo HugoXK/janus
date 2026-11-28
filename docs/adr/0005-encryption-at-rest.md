@@ -110,6 +110,13 @@ migrated, so `janus demo` and the test suite keep working on a fresh store.
 provenance are unchanged; only the file contents become envelopes. Reads of
 legacy plaintext files fail closed (`plaintext_blob`) until migrated.
 
+**Opening a migrated store.** Every store-opening path (`janus brief`,
+`snapshot`, `asof`, `serve`, MCP) uses `memory.store.open_store`, which first
+tries the store without a key and only then loads `JANUS_MASTER_KEY` /
+`JANUS_MASTER_KEY_FILE`; a plaintext store is never silently turned into an
+encrypted one. Missing or wrong keys surface as `error [key_missing]` or
+`error [key_mismatch]` with exit 1, not a traceback.
+
 **Config redaction.** The master key is never loaded into `Settings`, so
 `janus config show`/`config doctor` cannot print it; a test asserts the value
 does not appear in CLI output.

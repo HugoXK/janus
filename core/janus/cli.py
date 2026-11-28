@@ -98,8 +98,8 @@ def asof(
             valid = ", ".join(item.value for item in ObservationKind)
             raise typer.BadParameter(f"kind must be one of: {valid}") from exc
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    load_settings()
+    store = _open_store(db)
     try:
         rows = store.query_observations_as_of(
             entity,
@@ -208,9 +208,9 @@ def blob_gc(
 ) -> None:
     """Delete blobs that no observation references."""
 
-    settings = load_settings()
+    load_settings()
     result = LocalBlobStore(_blob_root(root)).gc(
-        JanusStore(db or settings.database), dry_run=dry_run
+        _open_store(db), dry_run=dry_run
     )
     if as_json:
         typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
@@ -221,11 +221,22 @@ def blob_gc(
         )
 
 
+def _open_store(db: Optional[str]) -> JanusStore:
+    from .memory.encryption import EncryptionError
+    from .memory.store import open_store
+
+    settings = load_settings()
+    try:
+        return open_store(db or settings.database)
+    except EncryptionError as exc:
+        typer.echo(f"error [{exc.code}]: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 def _service(db: Optional[str]):
     from .mcp.service import JanusService
 
-    settings = load_settings()
-    return JanusService(JanusStore(db or settings.database))
+    return JanusService(_open_store(db))
 
 
 def _emit_json(payload) -> None:
@@ -296,9 +307,9 @@ def serve(
 
     from .server import make_server
 
-    settings = load_settings()
+    load_settings()
     server = make_server(
-        JanusStore(db or settings.database),
+        _open_store(db),
         host=host,
         port=port,
         token=os.environ.get("JANUS_API_TOKEN") or None,
@@ -314,8 +325,8 @@ def serve(
 def _scoped_authorizer(db: Optional[str]):
     from .mcp.auth import authorizer_from_env
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    load_settings()
+    store = _open_store(db)
     return store, authorizer_from_env(store)
 
 
@@ -451,8 +462,8 @@ def security_resolve(
 ) -> None:
     """Resolve a symbol as it existed at one time."""
 
-    settings = load_settings()
-    security = SecurityMaster(JanusStore(db or settings.database)).resolve(
+    load_settings()
+    security = SecurityMaster(_open_store(db)).resolve(
         symbol, _as_of_option(as_of), exchange=exchange
     )
     if security is None:
@@ -475,8 +486,8 @@ def security_history(
 ) -> None:
     """Show every security-master row for a symbol."""
 
-    settings = load_settings()
-    rows = SecurityMaster(JanusStore(db or settings.database)).history(symbol)
+    load_settings()
+    rows = SecurityMaster(_open_store(db)).history(symbol)
     payload = [row.to_dict() for row in rows]
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -497,8 +508,8 @@ def universe_members(
 ) -> None:
     """Return the members that existed in a universe at one time."""
 
-    settings = load_settings()
-    rows = SecurityMaster(JanusStore(db or settings.database)).members(
+    load_settings()
+    rows = SecurityMaster(_open_store(db)).members(
         universe, _as_of_option(as_of)
     )
     payload = [row.to_dict() for row in rows]
@@ -518,9 +529,9 @@ def actions_list(
 ) -> None:
     """List corporate actions in effective-time order."""
 
-    settings = load_settings()
+    load_settings()
     stamp = _as_of_option(as_of) if as_of else None
-    rows = CorporateActionLedger(JanusStore(db or settings.database)).list(
+    rows = CorporateActionLedger(_open_store(db)).list(
         security_id, as_of=stamp
     )
     payload = [row.to_dict() for row in rows]
@@ -543,8 +554,8 @@ def actions_adjust(
 ) -> None:
     """Adjust a raw price and print the explicit basis."""
 
-    settings = load_settings()
-    payload = CorporateActionLedger(JanusStore(db or settings.database)).adjust_price(
+    load_settings()
+    payload = CorporateActionLedger(_open_store(db)).adjust_price(
         security_id, raw_price, _as_of_option(as_of)
     )
     if as_json:
@@ -564,8 +575,8 @@ def spans_list(
 ) -> None:
     """List exact source spans for one observation."""
 
-    settings = load_settings()
-    rows = SpanStore(JanusStore(db or settings.database)).list(observation_id)
+    load_settings()
+    rows = SpanStore(_open_store(db)).list(observation_id)
     payload = [row.to_dict() for row in rows]
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -585,9 +596,9 @@ def citation(
 ) -> None:
     """Print a citation backed by an exact source span."""
 
-    settings = load_settings()
+    load_settings()
     try:
-        result = SpanStore(JanusStore(db or settings.database)).citation(
+        result = SpanStore(_open_store(db)).citation(
             observation_id, span_id=span_id
         )
     except KeyError as exc:
@@ -612,8 +623,8 @@ def audit_verify(
 ) -> None:
     """Recompute the audit chain and check live rows against it."""
 
-    settings = load_settings()
-    chain = AuditChain(JanusStore(db or settings.database))
+    load_settings()
+    chain = AuditChain(_open_store(db))
     try:
         expected = (
             AuditChain.checkpoint_from_file(checkpoint) if checkpoint else None
@@ -646,8 +657,8 @@ def audit_export(
 ) -> None:
     """Export the chain and its head checkpoint for offline verification."""
 
-    settings = load_settings()
-    chain = AuditChain(JanusStore(db or settings.database))
+    load_settings()
+    chain = AuditChain(_open_store(db))
     checkpoint = chain.export(
         out, as_of=_as_of_option(as_of) if as_of else None
     )
