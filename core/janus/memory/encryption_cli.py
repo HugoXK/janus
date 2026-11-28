@@ -80,13 +80,22 @@ def keys_migrate(
     blob_root: Optional[Path] = typer.Option(None, "--blob-root", help="Blob store root"),
     backup: Optional[Path] = typer.Option(None, "--backup", help="Pre-migration backup path"),
     batch_size: int = typer.Option(100, "--batch-size", help="Rows per batch"),
+    shred_backup: bool = typer.Option(
+        False, "--shred-backup", help="Delete the plaintext backup after a successful migration"
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
 ) -> None:
     """Encrypt legacy plaintext rows and blobs with an automatic backup."""
 
     store = _open_encrypted(db)
     try:
-        payload = migrate(store, backup_path=backup, blob_root=blob_root, batch_size=batch_size)
+        payload = migrate(
+            store,
+            backup_path=backup,
+            blob_root=blob_root,
+            batch_size=batch_size,
+            shred_backup=shred_backup,
+        )
     except EncryptionError as exc:
         _fail(exc)
     _emit(payload, as_json)
@@ -113,13 +122,17 @@ def keys_rotate(
 def keys_retire(
     key_id: str = typer.Option(..., "--key-id", help="Retired key id to delete"),
     db: Optional[Path] = typer.Option(None, "--db", help="SQLite path"),
+    blob_root: Optional[Path] = typer.Option(None, "--blob-root", help="Blob store root"),
+    no_blobs: bool = typer.Option(
+        False, "--no-blobs", help="Assert this store has no encrypted blobs"
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
 ) -> None:
-    """Delete a retired key once no row references it."""
+    """Delete a retired key once no row or blob references it."""
 
     store = _open_encrypted(db)
     try:
-        retire(store, key_id)
+        retire(store, key_id, blob_root=blob_root, assume_no_blobs=no_blobs)
     except EncryptionError as exc:
         _fail(exc)
     _emit({"retired": key_id}, as_json)

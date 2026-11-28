@@ -85,7 +85,9 @@ the same OS user cannot be told apart from a locally fitted one
   signature.
 - Cache files remain raw provider payloads; blob retention and deletion policy
   is manual. `janus keys status` reports unsealed blobs but does not delete
-  them.
+  them. Blob filenames stay the plaintext SHA-256, so a holder of a candidate
+  document can confirm whether it is in the store; content addressing is kept
+  deliberately.
 - The threat model does not cover the operating system, disk encryption, or
   backups; those are the workflow owner's responsibility.
 

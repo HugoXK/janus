@@ -51,6 +51,12 @@ KEK  (JANUS_MASTER_KEY env, or 0600 file: JANUS_MASTER_KEY_FILE,
 | `prediction` | `target` |
 | `outcome` | `realized_value` |
 
+The tamper-evident audit chain (`audit_entry.payload`) seals the same
+sensitive values (`prediction.target`, `outcome.realized_value`) with the store
+sealer under the AAD `audit.<kind>:<ref_id>`, and verification unseals them for
+the live-source comparison; a chain copied with the database therefore does not
+reintroduce the plaintext.
+
 Every other column (ids, timestamps, confidence, hashes, status, prices) stays
 plaintext so `as_of` filtering, ordering and pagination do not depend on
 ciphertext. `observation` values, `feature_value`, `review` and model artifacts
@@ -77,7 +83,10 @@ migrated, so `janus demo` and the test suite keep working on a fresh store.
    because their `key_id` already matches;
 4. blobs are re-wrapped file by file under the same active key;
 5. `janus keys retire --key-id K` deletes the old key only when no row or blob
-   references it (`key_in_use` otherwise).
+   references it (`key_in_use` otherwise). It counts sealed blobs when
+   `--blob-root` is given and otherwise refuses unless `--no-blobs` explicitly
+   asserts the store has none, so a key that could still open a blob is never
+   deleted by accident.
 
 **Migration from plaintext v0.1** (`janus keys migrate`):
 
@@ -85,10 +94,16 @@ migrated, so `janus demo` and the test suite keep working on a fresh store.
    and creates no backup;
 2. otherwise copy the database with SQLite's backup API to
    `<db>.pre-encryption-<UTC>.bak` (`0600`, never overwritten);
-3. encrypt rows in batches, then migrate plaintext blobs;
-4. any failure restores the backup and re-raises, so the database is left
+3. encrypt rows in batches with `PRAGMA secure_delete = ON`, then migrate
+   plaintext blobs;
+4. `VACUUM` (and a WAL checkpoint when enabled) so pre-migration row images do
+   not survive in freed pages of the live database;
+5. any failure restores the backup and re-raises, so the database is left
    exactly as it was;
-5. re-running after success is a no-op.
+6. re-running after success is a no-op. The backup is plaintext by definition:
+   keep it `0600` until the migration is verified, then destroy it or pass
+   `--shred-backup` to have the command delete it after success. `janus keys
+   migrate` prints the backup path when it keeps one.
 
 **Blob store.** `EncryptedBlobStore` keeps the path
 `<root>/<aa>/<sha256(plaintext)>`, so `raw_hash`, `raw_uri`, dedup and
@@ -111,8 +126,10 @@ does not appear in CLI output.
 
 Good:
 
-- Copied stores, blob directories, disk images and backups no longer disclose
-  the listed free text or raw documents.
+- Copied stores, blob directories and disk images no longer disclose the listed
+  free text or raw documents, including copies of the audit chain. A
+  pre-migration `.bak` is plaintext until it is destroyed (see the migration
+  policy above); freed pages are scrubbed with `secure_delete` + `VACUUM`.
 - Rotation is decoupled from content and provenance; a key can be retired one id
   at a time, and interrupted rotation resumes.
 - Failures are typed and explicit; nothing silently degrades to plaintext.
@@ -128,6 +145,9 @@ Bad / accepted:
 - Rotation is O(rows + blobs); each file is replaced atomically, but the whole
   operation is not a single transaction, so an interrupted run leaves a mix of
   key ids that `janus keys status` reports.
+- Blob filenames remain the plaintext SHA-256, so a holder of a candidate
+  document can confirm whether it is in the store. That is the price of content
+  addressing and is accepted; it is listed in the threat model.
 - Migration takes a full copy of the database first, so it needs that much free
   disk and exclusive-ish access while it runs.
 
@@ -135,20 +155,40 @@ Bad / accepted:
 
 ```sh
 # one-time
-export JANUS_MASTER_KEY="$(base64 < 32-random-bytes)"   # or point at a 0600 file
+openssl rand -base64 32 > ~/.janus/keys/master.key && chmod 600 ~/.janus/keys/master.key
+export JANUS_MASTER_KEY_FILE=~/.janus/keys/master.key
 janus keys init    --db ~/.janus/janus.db
-janus keys migrate --db ~/.janus/janus.db --blob-root ~/.janus/blobs
+janus keys migrate --db ~/.janus/janus.db --blob-root ~/.janus/blobs   # add --shred-backup once verified
 
 # rotation after exposure or on schedule
 janus keys rotate  --db ~/.janus/janus.db --blob-root ~/.janus/blobs
 janus keys status  --db ~/.janus/janus.db --blob-root ~/.janus/blobs
-janus keys retire  --db ~/.janus/janus.db --key-id k1
+janus keys retire  --db ~/.janus/janus.db --key-id k1 --blob-root ~/.janus/blobs
 ```
 
 `janus keys status` is the health check: non-zero `plaintext_rows` means a
 migration is pending, a retired id that still appears in `rows`/blobs means a
 rotation is pending, and `rotation_in_progress` means a run was interrupted and
 the next `janus keys rotate` continues it.
+
+## Rollback
+
+Reverting the application code stops writing and reading ciphertext, but it does
+not decrypt existing rows. To return a migrated database to plaintext, run
+`janus keys status` to confirm only one key id is in use, decrypt the columns
+with that key, then:
+
+```sql
+DROP TABLE IF EXISTS encryption_rotation;
+DROP TABLE IF EXISTS encryption_key;
+ALTER TABLE thesis DROP COLUMN key_id;
+ALTER TABLE prediction DROP COLUMN key_id;
+ALTER TABLE outcome DROP COLUMN key_id;
+```
+
+Keep `schema_migrations` at version 10; do not delete the row, or the next start
+will try to re-add the tables. Restore the pre-migration backup instead when it
+is still available and the encryption must be abandoned wholesale.
 
 ## Revisit trigger
 

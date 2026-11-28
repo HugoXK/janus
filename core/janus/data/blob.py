@@ -186,6 +186,14 @@ class EncryptedBlobStore:
         digest = hashlib.sha256(data).hexdigest()
         path = self.path(digest)
         if path.exists():
+            raw = path.read_bytes()
+            if not self.sealer.is_sealed(raw):
+                # A legacy plaintext blob with this digest must not stay in
+                # clear text just because put() found it already on disk.
+                sealed = self.sealer.seal(
+                    raw, context=self._context(digest)
+                ).encode("ascii")
+                self._write(path, sealed)
             return digest
         sealed = self.sealer.seal(data, context=self._context(digest)).encode("ascii")
         path.parent.mkdir(parents=True, exist_ok=True)

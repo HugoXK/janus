@@ -44,7 +44,7 @@ WRAP_PREFIX = "januswrap1"
 KEY_BYTES = 32
 NONCE_BYTES = 12
 TAG_BYTES = 16
-_KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+_KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 class EncryptionError(Exception):
@@ -187,6 +187,7 @@ class KeyManager:
             )
         self._conn = connection
         self._master = bytes(master_key)
+        self._dek_cache: dict[str, bytes] = {}
 
     # -- key inventory ---------------------------------------------------
     def keys(self) -> list[WrappedKey]:
@@ -207,7 +208,7 @@ class KeyManager:
         if active is not None:
             return active
         key_id = self._next_key_id()
-        wrapped = self._wrap(os.urandom(KEY_BYTES))
+        wrapped = self._wrap(os.urandom(KEY_BYTES), key_id)
         self._conn.execute(
             "INSERT INTO encryption_key (key_id, wrapped_dek, state, created_at) "
             "VALUES (?, ?, 'active', ?)",
@@ -217,6 +218,9 @@ class KeyManager:
         return key_id
 
     def dek(self, key_id: str) -> bytes:
+        cached = self._dek_cache.get(key_id)
+        if cached is not None:
+            return cached
         row = self._conn.execute(
             "SELECT wrapped_dek FROM encryption_key WHERE key_id = ?", (key_id,)
         ).fetchone()
@@ -226,7 +230,9 @@ class KeyManager:
                 f"record needs key {key_id!r}, which this store does not hold "
                 f"(available: {known})"
             )
-        return self._unwrap(str(row[0]))
+        material = self._unwrap(str(row[0]), key_id)
+        self._dek_cache[key_id] = material
+        return material
 
     def start_rotation(self) -> str:
         """Create a new active key id; the previous one stays for decryption."""
@@ -242,7 +248,7 @@ class KeyManager:
         self._conn.execute(
             "INSERT INTO encryption_key (key_id, wrapped_dek, state, created_at) "
             "VALUES (?, ?, 'active', ?)",
-            (new_id, self._wrap(os.urandom(KEY_BYTES)), _now()),
+            (new_id, self._wrap(os.urandom(KEY_BYTES), new_id), _now()),
         )
         self._conn.commit()
         return new_id
@@ -257,14 +263,17 @@ class KeyManager:
             raise KeyInUseError(f"key {key_id!r} is active and cannot be retired")
         self._conn.execute("DELETE FROM encryption_key WHERE key_id = ?", (key_id,))
         self._conn.commit()
+        self._dek_cache.pop(key_id, None)
 
     # -- wrapping --------------------------------------------------------
-    def _wrap(self, dek: bytes) -> str:
+    def _wrap(self, dek: bytes, key_id: str) -> str:
         nonce = os.urandom(NONCE_BYTES)
-        ciphertext = _require_aesgcm()(self._master).encrypt(nonce, dek, WRAP_PREFIX.encode())
+        ciphertext = _require_aesgcm()(self._master).encrypt(
+            nonce, dek, _wrap_aad(key_id)
+        )
         return ".".join([WRAP_PREFIX, _b64encode(nonce), _b64encode(ciphertext)])
 
-    def _unwrap(self, wrapped: str) -> bytes:
+    def _unwrap(self, wrapped: str, key_id: str) -> bytes:
         parts = wrapped.split(".")
         if len(parts) != 3 or parts[0] != WRAP_PREFIX:
             raise KeyMismatchError("stored data key is not in the wrapped-key envelope")
@@ -275,7 +284,9 @@ class KeyManager:
             parts[2], error=KeyMismatchError, detail="wrapped key ciphertext is invalid"
         )
         try:
-            return _require_aesgcm()(self._master).decrypt(nonce, ciphertext, WRAP_PREFIX.encode())
+            return _require_aesgcm()(self._master).decrypt(
+                nonce, ciphertext, _wrap_aad(key_id)
+            )
         except EncryptionError:
             raise
         except Exception as exc:
@@ -375,6 +386,10 @@ class Sealer:
 
 def _aad(context: str) -> bytes:
     return f"{TOKEN_PREFIX}|{context}".encode("utf-8")
+
+
+def _wrap_aad(key_id: str) -> bytes:
+    return f"{WRAP_PREFIX}|{key_id}".encode("utf-8")
 
 
 def _now() -> str:

@@ -172,8 +172,8 @@ class JanusStore:
         return self._conn  # type: ignore[return-value]
 
     @property
-    def raw_connection(self) -> sqlite3.Connection:
-        """The underlying connection, for sqlite3 APIs that need the real object."""
+    def _raw_connection(self) -> sqlite3.Connection:
+        """Private escape hatch for sqlite3 APIs that reject the proxy object."""
 
         return self._conn._connection
 

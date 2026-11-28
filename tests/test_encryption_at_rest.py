@@ -301,7 +301,7 @@ def test_rotation_rekeys_and_keeps_old_key_until_retired(tmp_path: Path) -> None
     store = _seeded_store(db)
 
     with pytest.raises(KeyInUseError) as excinfo:
-        retire(store, "k1")
+        retire(store, "k1", assume_no_blobs=True)
     assert excinfo.value.code == "key_in_use"
 
     report = rotate(store)
@@ -318,7 +318,7 @@ def test_rotation_rekeys_and_keeps_old_key_until_retired(tmp_path: Path) -> None
     assert state["rows"]["thesis"] == {"k2": 1}
     assert state["plaintext_rows"] == 0
 
-    retire(store, "k1")
+    retire(store, "k1", assume_no_blobs=True)
     assert [key.key_id for key in store.key_manager.keys()] == ["k2"]
     store.close()
 
@@ -447,4 +447,197 @@ def test_as_of_queries_keep_plaintext_ordering(tmp_path: Path) -> None:
     rows = store.query_observations_as_of("ACME", NOW, mode="observed")
     assert [row.id for row in rows] == ["obs1"]
     assert rows[0].value == {"close": 10.0}
+    store.close()
+
+
+def test_audit_chain_seals_prediction_and_outcome_payloads(tmp_path: Path) -> None:
+    from janus.forecast.ledger import PredictionLedger
+    from janus.memory.audit import AuditChain, SourceDriftError
+
+    db = tmp_path / "janus.db"
+    store = JanusStore(db, master_key=MASTER)
+    ledger = PredictionLedger(store)
+    prediction = ledger.record(
+        thesis_id="t1",
+        target=f"{MARKER} audited target",
+        horizon="1M",
+        as_of=NOW,
+        model_version="m1",
+        features_hash="h1",
+    )
+    outcome = ledger.settle(
+        prediction.id,
+        realized_value={"marker": MARKER},
+        source="manual",
+        realized_at=NOW,
+    )
+    assert outcome.prediction_id == prediction.id
+
+    # The chain verifies (sealed payloads are unsealed for the live comparison).
+    report = AuditChain(store).verify()
+    assert report.count == 2
+
+    payloads = [
+        str(row[0])
+        for row in store.connection.execute("SELECT payload FROM audit_entry").fetchall()
+    ]
+    assert payloads and all(MARKER not in payload for payload in payloads)
+    store.close()
+
+    dump = "\n".join(sqlite3.connect(db).iterdump())
+    assert MARKER not in dump
+    assert MARKER not in db.read_bytes().decode("latin-1")
+
+    # Drift detection still works after sealing.
+    store = JanusStore(db, master_key=MASTER)
+    sealer = store.sealer
+    assert sealer is not None
+    tampered = sealer.seal(b"tampered", context=f"prediction.target:{prediction.id}")
+    store.connection.execute(
+        "UPDATE prediction SET target = ? WHERE id = ?", (tampered, prediction.id)
+    )
+    store.connection.commit()
+    with pytest.raises(SourceDriftError):
+        AuditChain(store).verify()
+    store.close()
+
+
+def test_migration_scrubs_live_db_but_backup_keeps_plaintext(tmp_path: Path) -> None:
+    db = tmp_path / "legacy.db"
+    plain = JanusStore(db)
+    plain.insert_thesis(
+        Thesis(
+            id="t1",
+            entity_id="ACME",
+            persona_id=None,
+            horizon="1M",
+            statement=f"{MARKER} plaintext",
+            assumptions=[],
+            catalysts=[],
+            risks=[],
+            falsifiers=[],
+            status=ThesisStatus.active,
+            created_at=NOW,
+            as_of=NOW,
+        )
+    )
+    plain.close()
+
+    store = JanusStore(db, master_key=MASTER)
+    result = migrate(store)
+    assert result["rows_encrypted"] == 1
+    store.close()
+
+    # secure_delete + VACUUM scrub the live file; the backup is plaintext.
+    assert MARKER not in db.read_bytes().decode("latin-1")
+    backup = Path(result["backup"])
+    assert MARKER in backup.read_bytes().decode("latin-1")
+
+
+def test_migration_can_shred_its_plaintext_backup(tmp_path: Path) -> None:
+    db = tmp_path / "legacy.db"
+    plain = JanusStore(db)
+    plain.insert_thesis(
+        Thesis(
+            id="t1",
+            entity_id="ACME",
+            persona_id=None,
+            horizon="1M",
+            statement=f"{MARKER} plaintext",
+            assumptions=[],
+            catalysts=[],
+            risks=[],
+            falsifiers=[],
+            status=ThesisStatus.active,
+            created_at=NOW,
+            as_of=NOW,
+        )
+    )
+    plain.close()
+
+    store = JanusStore(db, master_key=MASTER)
+    result = migrate(store, shred_backup=True)
+    store.close()
+    assert result["backup"] is None
+    assert not list(tmp_path.glob("*.bak"))
+
+
+def test_retire_refuses_when_blobs_still_use_the_key(tmp_path: Path) -> None:
+    store = _seeded_store(tmp_path / "janus.db")
+    sealer = store.sealer
+    assert sealer is not None
+    blobs = EncryptedBlobStore(tmp_path / "blobs", sealer)
+    blobs.put(b"blob payload")
+    rotate(store)  # rows move to k2; the blob is still k1
+
+    with pytest.raises(KeyInUseError):
+        retire(store, "k1")  # must not delete a key that may seal blobs
+    with pytest.raises(KeyInUseError):
+        retire(store, "k1", blob_root=tmp_path / "blobs")
+
+    blobs.rotate()
+    retire(store, "k1", blob_root=tmp_path / "blobs")
+    assert [key.key_id for key in store.key_manager.keys()] == ["k2"]
+    assert blobs.get(blobs.iter_digests()[0]) == b"blob payload"
+    store.close()
+
+
+def test_key_material_cache_and_wrap_aad_binding(tmp_path: Path) -> None:
+    store = _seeded_store(tmp_path / "janus.db")
+    manager = store.key_manager
+    assert manager is not None
+    first = manager.dek("k1")
+    assert manager.dek("k1") is first
+    assert "k1" in manager._dek_cache
+
+    # Swapping wrapped DEKs between key ids must fail authentication.
+    rotate(store)
+    rows = store.connection.execute(
+        "SELECT key_id, wrapped_dek FROM encryption_key ORDER BY key_id"
+    ).fetchall()
+    wrapped = {str(row[0]): str(row[1]) for row in rows}
+    store.connection.execute(
+        "UPDATE encryption_key SET wrapped_dek = ? WHERE key_id = 'k1'",
+        (wrapped["k2"],),
+    )
+    store.connection.execute(
+        "UPDATE encryption_key SET wrapped_dek = ? WHERE key_id = 'k2'",
+        (wrapped["k1"],),
+    )
+    store.connection.commit()
+    from janus.memory.encryption import KeyManager
+
+    swapped = KeyManager(store.connection, MASTER)
+    with pytest.raises(KeyMismatchError):
+        swapped.dek("k1")
+    store.close()
+
+
+def test_blob_put_seals_a_preexisting_plaintext_blob(tmp_path: Path) -> None:
+    payload = b"legacy bytes"
+    legacy = LocalBlobStore(tmp_path / "blobs")
+    digest = legacy.put(payload)
+    assert legacy.get(digest) == payload
+
+    store = _seeded_store(tmp_path / "janus.db")
+    sealer = store.sealer
+    assert sealer is not None
+    blobs = EncryptedBlobStore(tmp_path / "blobs", sealer)
+    assert blobs.put(payload) == digest
+    assert b"legacy bytes" not in blobs.path(digest).read_bytes()
+    assert blobs.get(digest) == payload
+    store.close()
+
+
+def test_key_ids_cannot_contain_the_envelope_separator(tmp_path: Path) -> None:
+    store = _seeded_store(tmp_path / "janus.db")
+    sealer = store.sealer
+    assert sealer is not None
+    parts = sealer.seal(b"x").split(".")
+    dotted = ".".join([parts[0], "k.1", parts[2], parts[3]])
+    # A key id containing "." cannot be represented in the dot-delimited
+    # envelope, so it is rejected rather than parsed as a different key.
+    assert not sealer.is_sealed(dotted)
+    with pytest.raises(CiphertextInvalidError):
+        sealer.unseal(dotted)
     store.close()

@@ -195,6 +195,7 @@ def migrate(
     backup_path: Optional[Path] = None,
     blob_root: Optional[Path] = None,
     batch_size: int = _BATCH_DEFAULT,
+    shred_backup: bool = False,
 ) -> dict[str, Any]:
     """Encrypt legacy plaintext rows (and blobs) with an automatic backup.
 
@@ -225,6 +226,10 @@ def migrate(
 
     backup = _backup_database(store, backup_path)
     encrypted = 0
+    # Overwrite freed pages as rows are rewritten, then VACUUM at the end, so
+    # the live file does not keep pre-migration plaintext images. The backup is
+    # plaintext by definition and stays on disk unless shred_backup is set.
+    connection.execute("PRAGMA secure_delete = ON")
     try:
         for table, columns in encrypted_columns().items():
             while True:
@@ -258,11 +263,28 @@ def migrate(
         from janus.data.blob import EncryptedBlobStore
 
         blobs = EncryptedBlobStore(blob_root, sealer).migrate_plaintext()
-    return {"rows_encrypted": encrypted, "blobs_migrated": blobs, "backup": str(backup)}
+    connection.execute("VACUUM")
+    connection.commit()
+    mode = connection.execute("PRAGMA journal_mode").fetchone()
+    if mode is not None and str(mode[0]).lower() == "wal":
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    if shred_backup:
+        backup.unlink()
+    return {
+        "rows_encrypted": encrypted,
+        "blobs_migrated": blobs,
+        "backup": None if shred_backup else str(backup),
+    }
 
 
-def retire(store: JanusStore, key_id: str) -> None:
-    """Delete a retired key only when no encrypted row still references it."""
+def retire(
+    store: JanusStore,
+    key_id: str,
+    *,
+    blob_root: Optional[Path] = None,
+    assume_no_blobs: bool = False,
+) -> None:
+    """Delete a retired key only when no encrypted row or blob references it."""
 
     connection = store.connection
     usage = sum(
@@ -276,6 +298,22 @@ def retire(store: JanusStore, key_id: str) -> None:
     if usage:
         raise KeyInUseError(
             f"key {key_id!r} is still used by {usage} rows; rotate them first"
+        )
+    blob_usage = 0
+    if blob_root is not None:
+        from janus.data.blob import EncryptedBlobStore
+
+        blob_usage = EncryptedBlobStore(blob_root, _sealer(store)).status().by_key_id.get(
+            key_id, 0
+        )
+    elif not assume_no_blobs:
+        raise KeyInUseError(
+            f"cannot prove key {key_id!r} is unused by blobs; pass blob_root or "
+            "assume_no_blobs=True"
+        )
+    if blob_usage:
+        raise KeyInUseError(
+            f"key {key_id!r} is still used by {blob_usage} blobs; rotate them first"
         )
     manager = store.key_manager
     if manager is None:
@@ -293,7 +331,7 @@ def _backup_database(store: JanusStore, backup_path: Optional[Path]) -> Path:
     backup.parent.mkdir(parents=True, exist_ok=True)
     destination = sqlite3.connect(str(backup))
     try:
-        store.raw_connection.backup(destination)
+        store._raw_connection.backup(destination)
     finally:
         destination.close()
     if os.name == "posix":
@@ -304,6 +342,6 @@ def _backup_database(store: JanusStore, backup_path: Optional[Path]) -> Path:
 def _restore_database(store: JanusStore, backup: Path) -> None:
     source = sqlite3.connect(str(backup))
     try:
-        source.backup(store.raw_connection)
+        source.backup(store._raw_connection)
     finally:
         source.close()
