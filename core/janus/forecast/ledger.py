@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
+from ..memory.audit import AuditChain, outcome_payload, prediction_payload
 from ..memory.models import Outcome, Prediction, utcnow
 from ..memory.store import JanusStore
 
@@ -13,11 +14,13 @@ class PredictionLedger:
 
     The whole point is that a forecast is recorded *before* the outcome is
     known. There is no update path for the forecast itself; only an outcome can
-    be attached later.
+    be attached later. Every write is also appended to the tamper-evident audit
+    chain.
     """
 
     def __init__(self, store: JanusStore) -> None:
         self.store = store
+        self.audit = AuditChain(store)
 
     def record(
         self,
@@ -48,6 +51,12 @@ class PredictionLedger:
             as_of=as_of,
         )
         self.store.insert_prediction(prediction)
+        self.audit.append(
+            "prediction",
+            prediction.id,
+            prediction_payload(prediction),
+            recorded_at=prediction.created_at,
+        )
         return prediction
 
     def settle(
@@ -75,6 +84,7 @@ class PredictionLedger:
         )
         self.store.insert_outcome(outcome)
         self.store.attach_outcome(prediction_id, outcome.id)
+        self.audit.append("outcome", outcome.id, outcome_payload(outcome))
         return outcome
 
     def open_predictions(self) -> list[Prediction]:

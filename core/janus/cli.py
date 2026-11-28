@@ -19,6 +19,7 @@ from .forecast.registry import (
     ModelArtifact,
     ModelRegistry,
 )
+from .memory.audit import AuditChain, AuditError
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
@@ -37,6 +38,7 @@ security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
 actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.")
 spans_app = typer.Typer(help="Inspect exact source spans and citations.")
+audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
@@ -44,6 +46,7 @@ app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
 app.add_typer(spans_app, name="spans")
+app.add_typer(audit_app, name="audit")
 
 
 @app.command()
@@ -427,6 +430,56 @@ def citation(
         typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     else:
         typer.echo(result.text)
+@audit_app.command("verify")
+def audit_verify(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    checkpoint: Optional[str] = typer.Option(
+        None, "--checkpoint", help="Exported audit JSON to compare against"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Recompute the audit chain and check live rows against it."""
+
+    settings = load_settings()
+    chain = AuditChain(JanusStore(db or settings.database))
+    try:
+        expected = (
+            AuditChain.checkpoint_from_file(checkpoint) if checkpoint else None
+        )
+        report = chain.verify(checkpoint=expected)
+    except AuditError as exc:
+        typer.echo(f"audit chain INVALID: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "status": "ok",
+        "count": report.count,
+        "head_seq": report.head_seq,
+        "head_hash": report.head_hash,
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"audit chain OK: {report.count} entries, "
+            f"head {report.head_hash[:12]}"
+        )
+
+
+@audit_app.command("export")
+def audit_export(
+    out: Path = typer.Option(..., "--out", help="Destination JSON file"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Export the chain and its head checkpoint for offline verification."""
+
+    settings = load_settings()
+    chain = AuditChain(JanusStore(db or settings.database))
+    checkpoint = chain.export(
+        out, as_of=_as_of_option(as_of) if as_of else None
+    )
+    typer.echo(f"exported {checkpoint.count} entries to {out}")
 
 
 @app.command()
