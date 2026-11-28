@@ -33,6 +33,13 @@ dock/panels, commands, HTTP panel API, and daily brief cron. See
 `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py`,
 `tests/test_server.py`, `tests/test_conflicts.py`, and `tests/test_copy.py`.
 
+JAN-143 (MCP scoped auth and write approvals, #151) is implemented:
+per-caller tokens, per-registration scopes, approval-first writes, and an
+append-only as-of audit trail in `core/janus/mcp/auth.py`. Contract and limits:
+`docs/MCP.md#scoped-auth-and-write-approvals`; threat-model update:
+`docs/SECURITY-THREAT-MODEL.md`; decision record:
+`docs/adr/0005-mcp-scoped-auth.md`; tests: `tests/test_mcp_scoped_auth.py`.
+
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
   memory, M2 analysis, M3 forecast and review, M4 interface, M5 evaluation and
   release.
