@@ -18,6 +18,15 @@ publication time.
 Adapters return `Observation` objects. They never write to the store directly;
 the scheduler owns persistence.
 
+## Blob store
+
+Raw documents are stored by SHA-256 in `core/janus/data/blob.py`. Identical
+payloads share one file; `put_json` canonicalizes before hashing. `metrics()`
+reports blob count and bytes, `verify()` detects tampering, and
+`gc(store)` deletes only blobs that no observation references through
+`raw_hash`. Deleting one observation therefore cannot orphan a blob still used
+by another. The CLI exposes `janus blob metrics` and `janus blob gc`.
+
 ## Scheduler
 
 ```python

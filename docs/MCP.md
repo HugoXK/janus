@@ -29,6 +29,8 @@ The default store is the configured SQLite database. Tests inject
 | `janus_calibrate` | Calibration report over settled predictions |
 | `janus_persona_list` | List stored personas and weights |
 | `janus_beliefbench_run` | Run a baseline over a scenario file |
+| `janus_scenario_tree` | Generate an up/base/down tree with falsifiers |
+| `janus_quantile_forecast` | Empirical 10/50/90 return quantiles |
 
 ## Resources
 
