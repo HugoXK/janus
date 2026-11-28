@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,9 @@ from .memory.retention import (
     export_redacted,
 )
 from .memory.models import ObservationKind
+from .memory.corporate_actions import CorporateActionLedger
+from .memory.security_master import SecurityMaster
+from .memory.spans import SpanStore
 from .memory.store import JanusStore
 
 app = typer.Typer(
@@ -35,10 +39,18 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+security_app = typer.Typer(help="Resolve point-in-time securities.")
+universe_app = typer.Typer(help="Query point-in-time universe membership.")
+actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.")
+spans_app = typer.Typer(help="Inspect exact source spans and citations.")
 retention_app = typer.Typer(help="Apply retention and export redacted data.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(security_app, name="security")
+app.add_typer(universe_app, name="universe")
+app.add_typer(actions_app, name="actions")
+app.add_typer(spans_app, name="spans")
 app.add_typer(retention_app, name="retention")
 
 
@@ -167,6 +179,264 @@ def schema_check(
         raise typer.Exit(code=1)
 
 
+def _service(db: Optional[str]):
+    from .mcp.service import JanusService
+
+    settings = load_settings()
+    return JanusService(JanusStore(db or settings.database))
+
+
+def _emit_json(payload) -> None:
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+
+@app.command()
+def brief(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show the daily brief for one entity."""
+
+    try:
+        payload = _service(db).brief(entity, as_of)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+        return
+    typer.echo(f"brief {entity} as_of={payload['as_of']}")
+    typer.echo(
+        f"theses={len(payload['theses'])} forecasts={len(payload['forecasts'])} "
+        f"observations={len(payload['observations'])}"
+    )
+    calibration = payload["calibration"]
+    typer.echo(
+        f"brier={calibration.get('brier')} ece={calibration.get('ece')} "
+        f"n={calibration.get('n')}"
+    )
+
+
+@app.command()
+def snapshot(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    out: Optional[Path] = typer.Option(None, "--out", help="Write snapshot JSON"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Create a hash-addressed point-in-time snapshot."""
+
+    try:
+        payload = _service(db).snapshot(entity, as_of)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
+    if as_json or out is None:
+        _emit_json(payload)
+    else:
+        typer.echo(
+            f"snapshot {payload['entity_id']} as_of={payload['as_of']} "
+            f"count={payload['count']} hash={payload['snapshot_hash']}"
+        )
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
+    port: int = typer.Option(8766, "--port", help="Bind port"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Serve the local JSON API used by the DSH plugin."""
+
+    from .server import make_server
+
+    settings = load_settings()
+    server = make_server(
+        JanusStore(db or settings.database),
+        host=host,
+        port=port,
+        token=os.environ.get("JANUS_API_TOKEN") or None,
+    )
+    bound_port = server.server_address[1]
+    typer.echo(f"janus api on http://{host}:{bound_port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+def _as_of_option(value: str) -> datetime:
+    try:
+        stamp = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp
+
+
+@security_app.command("resolve")
+def security_resolve(
+    symbol: str = typer.Argument(..., help="Ticker or symbol"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    exchange: Optional[str] = typer.Option(None, "--exchange", help="Exchange filter"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve a symbol as it existed at one time."""
+
+    settings = load_settings()
+    security = SecurityMaster(JanusStore(db or settings.database)).resolve(
+        symbol, _as_of_option(as_of), exchange=exchange
+    )
+    if security is None:
+        typer.echo(f"security not found: {symbol}", err=True)
+        raise typer.Exit(code=1)
+    if as_json:
+        typer.echo(json.dumps(security.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{security.id} {security.symbol} entity={security.entity_id} "
+            f"exchange={security.exchange or '-'} {security.valid_from.isoformat()}"
+        )
+
+
+@security_app.command("history")
+def security_history(
+    symbol: str = typer.Argument(..., help="Ticker or symbol"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show every security-master row for a symbol."""
+
+    settings = load_settings()
+    rows = SecurityMaster(JanusStore(db or settings.database)).history(symbol)
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for row in payload:
+            typer.echo(
+                f"{row['id']} {row['symbol']} {row['valid_from']} -> "
+                f"{row['valid_to'] or 'open'}"
+            )
+
+
+@universe_app.command("members")
+def universe_members(
+    universe: str = typer.Argument(..., help="Universe name, e.g. SPX"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Return the members that existed in a universe at one time."""
+
+    settings = load_settings()
+    rows = SecurityMaster(JanusStore(db or settings.database)).members(
+        universe, _as_of_option(as_of)
+    )
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for row in payload:
+            typer.echo(f"{row['symbol']} {row['id']}")
+
+
+@actions_app.command("list")
+def actions_list(
+    security_id: Optional[str] = typer.Option(None, "--security", help="Security id"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List corporate actions in effective-time order."""
+
+    settings = load_settings()
+    stamp = _as_of_option(as_of) if as_of else None
+    rows = CorporateActionLedger(JanusStore(db or settings.database)).list(
+        security_id, as_of=stamp
+    )
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for row in payload:
+            typer.echo(
+                f"{row['effective_at']} {row['security_id']} {row['action_type']}"
+            )
+
+
+@actions_app.command("adjust")
+def actions_adjust(
+    security_id: str = typer.Argument(..., help="Security id"),
+    raw_price: float = typer.Option(..., "--price", help="Raw price"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Adjust a raw price and print the explicit basis."""
+
+    settings = load_settings()
+    payload = CorporateActionLedger(JanusStore(db or settings.database)).adjust_price(
+        security_id, raw_price, _as_of_option(as_of)
+    )
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{security_id} raw={payload['raw_price']} "
+            f"adjusted={payload['adjusted_price']:.6f} basis={payload['basis']}"
+        )
+
+
+@spans_app.command("list")
+def spans_list(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List exact source spans for one observation."""
+
+    settings = load_settings()
+    rows = SpanStore(JanusStore(db or settings.database)).list(observation_id)
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    elif not payload:
+        typer.echo("no source spans")
+    else:
+        for row in payload:
+            typer.echo(f"{row['id']} {row['locator']} {row['excerpt'][:80]}")
+
+
+@app.command()
+def citation(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    span_id: Optional[str] = typer.Option(None, "--span", help="Specific span id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Print a citation backed by an exact source span."""
+
+    settings = load_settings()
+    try:
+        result = SpanStore(JanusStore(db or settings.database)).citation(
+            observation_id, span_id=span_id
+        )
+    except KeyError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(result.text)
+
+
 def _retention_rule(value: str) -> RetentionRule:
     parts = value.split(":")
     if len(parts) != 3:
@@ -198,7 +468,9 @@ def retention_apply(
     except ValueError as exc:
         raise typer.BadParameter("use an ISO timestamp") from exc
     if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
     policy = RetentionPolicy(
         rules=tuple(_retention_rule(item) for item in (rule or [])),
         default_max_age_days=default_days,
@@ -235,7 +507,9 @@ def retention_export(
     except ValueError as exc:
         raise typer.BadParameter("use an ISO timestamp") from exc
     if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
     settings = load_settings()
     rows = JanusStore(db or settings.database).query_observations_as_of(
         entity, stamp, mode="published"

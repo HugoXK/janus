@@ -80,6 +80,7 @@ class RetentionResult:
     kept: int
     by_source: dict[str, int]
     deleted_ids: tuple[str, ...]
+    dry_run: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -137,6 +138,7 @@ def apply_retention(
         kept=len(rows) - len(expired),
         by_source=dict(sorted(by_source.items())),
         deleted_ids=tuple(sorted(expired)),
+        dry_run=dry_run,
     )
 
 
@@ -158,11 +160,15 @@ def redact_value(value: Any, fields: Iterable[str]) -> Any:
 
 
 def redact_observation(observation: Observation, fields: Iterable[str]) -> dict[str, Any]:
+    """Mask the requested field names at every depth of the exported payload.
+
+    This covers top-level columns (`source`, `raw_hash`, `raw_uri`, `entity_id`,
+    ...) as well as nested keys inside `value`; a name that appears nowhere is a
+    no-op rather than an error.
+    """
+
     payload = observation.model_dump(mode="json")
-    payload["value"] = redact_value(payload["value"], fields)
-    if "raw_uri" in {str(field).lower() for field in fields}:
-        payload["raw_uri"] = "***"
-    return payload
+    return redact_value(payload, fields)
 
 
 def export_redacted(

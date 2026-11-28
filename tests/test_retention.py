@@ -213,3 +213,95 @@ def test_retention_cli_apply_and_export(tmp_path, monkeypatch) -> None:
     assert exported.exit_code == 0, exported.output
     payloads = [json.loads(line) for line in out.read_text().splitlines()]
     assert all(item["value"].get("email") in (None, "***") for item in payloads)
+
+
+def test_redact_observation_covers_top_level_fields() -> None:
+    observation = Observation(
+        id="top",
+        entity_id="ACME",
+        kind=ObservationKind.news,
+        source="rss",
+        published_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        value={"title": "hello"},
+        raw_hash="hash:top",
+        raw_uri="s3://bucket/secret",
+    )
+
+    payload = redact_observation(observation, {"raw_uri", "source", "raw_hash"})
+    assert payload["raw_uri"] == "***"
+    assert payload["source"] == "***"
+    assert payload["raw_hash"] == "***"
+    assert payload["value"]["title"] == "hello"
+    assert observation.raw_uri == "s3://bucket/secret"
+
+
+def test_redact_observation_unknown_field_is_a_noop() -> None:
+    observation = _obs("nope")
+    payload = redact_observation(observation, {"does_not_exist"})
+    assert payload["source"] == "rss"
+    assert payload["raw_hash"] == "hash:nope"
+    assert payload["value"]["title"] == "nope"
+
+
+def test_dry_run_sets_the_flag() -> None:
+    store = JanusStore(":memory:")
+    as_of = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    store.insert_observation(_obs("old", published_at=as_of - timedelta(days=45)))
+    policy = RetentionPolicy(rules=(RetentionRule(max_age_days=30),))
+
+    rehearsal = apply_retention(store, as_of=as_of, policy=policy, dry_run=True)
+    assert rehearsal.dry_run is True
+    assert rehearsal.deleted == 1
+
+    real = apply_retention(store, as_of=as_of, policy=policy)
+    assert real.dry_run is False
+    assert real.deleted == 1
+
+
+def test_first_matching_rule_wins() -> None:
+    observation = _obs("x", source="rss:reuters")
+    broad = RetentionPolicy(
+        rules=(
+            RetentionRule(source="*", kind="*", max_age_days=365),
+            RetentionRule(source="rss", kind="news", max_age_days=30),
+        )
+    )
+    specific_first = RetentionPolicy(
+        rules=(
+            RetentionRule(source="rss", kind="news", max_age_days=30),
+            RetentionRule(source="*", kind="*", max_age_days=365),
+        )
+    )
+    assert broad.max_age_for(observation) == 365
+    assert specific_first.max_age_for(observation) == 30
+
+
+def test_retention_cli_rejects_naive_as_of(tmp_path, monkeypatch) -> None:
+    from typer.testing import CliRunner
+
+    from janus.cli import app
+
+    path = tmp_path / "janus.db"
+    JanusStore(path).close()
+    monkeypatch.setenv("JANUS_DB", str(path))
+    runner = CliRunner()
+
+    applied = runner.invoke(
+        app, ["retention", "apply", "--as-of", "2026-02-01T00:00:00"]
+    )
+    assert applied.exit_code != 0
+    assert "timezone offset" in applied.output
+    exported = runner.invoke(
+        app,
+        [
+            "retention",
+            "export",
+            "ACME",
+            "--as-of",
+            "2026-02-01T00:00:00",
+            "--out",
+            str(tmp_path / "out.jsonl"),
+        ],
+    )
+    assert exported.exit_code != 0
+    assert "timezone offset" in exported.output
