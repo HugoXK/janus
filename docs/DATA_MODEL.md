@@ -85,6 +85,30 @@ Both values stay in the report; a tie or a same-tier/same-time disagreement is
 explicitly `unresolved`. Human overrides are appended to a JSONL audit with the
 actor, reason, selected id, alternatives, and timestamp, never overwriting the
 original observations.
+## Security master and universe membership
+
+`security` stores symbol/exchange/share-class rows with `valid_from`/`valid_to`;
+the same symbol can belong to different entities in different windows.
+`universe_membership` stores point-in-time index membership and joins to the
+security row. `SecurityMaster.resolve()` and `members()` filter both windows, so
+a universe query cannot include a delisted or not-yet-listed name. Migration v6
+adds both tables.
+
+## Corporate actions
+
+`corporate_action` stores splits, stock/cash dividends, mergers, spin-offs, and
+symbol changes with `effective_at`, source, raw hash, and payload. The ledger
+returns an explicit adjustment basis: split factors and cash dividends are
+applied deterministically, while merger/spin-off/symbol-change rows are flagged
+as manual actions rather than silently applied. Migration v7 adds the table.
+
+## Source spans
+
+`source_span` stores an exact locator (`page=12;paragraph=3`, table cell, etc.),
+excerpt, optional byte offsets, and a blob hash tied to an observation.
+`SpanStore.citation()` refuses a missing span and returns a citation containing
+source, published time, URI/hash, locator, and excerpt hash. Migration v8 adds
+the table.
 
 ## As-of semantics
 

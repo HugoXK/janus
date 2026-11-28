@@ -1,0 +1,4 @@
+# Mounts the Janus DSH plugin. Start `janus serve` first.
+- insert:
+    - id: janus
+      name: '@hugoxk/janus-dsh'
