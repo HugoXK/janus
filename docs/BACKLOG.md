@@ -32,7 +32,7 @@ dock/panels, commands, HTTP panel API, and daily brief cron. See
 `tests/test_persona_tournament.py`, `tests/test_blob.py`,
 `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py`,
 `tests/test_server.py`, `tests/test_conflicts.py`, `tests/test_copy.py`, 
-`tests/test_mcp_scoped_auth.py`, `tests/test_fundamentals.py`, 
+`tests/test_retention.py`, `tests/test_mcp_scoped_auth.py`, `tests/test_fundamentals.py`, 
 `tests/test_snapshot_archive.py`, and `tests/test_release.py`.
 
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
