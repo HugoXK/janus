@@ -15,7 +15,7 @@ from .api_schema import openapi_document
 from .config import load_settings
 from .contracts import SCHEMA_VERSION
 from .mcp.service import JanusService
-from .memory.store import JanusStore
+from .memory.store import JanusStore, open_store
 
 PANEL_HINTS = {
     "market": "materialize market features and build the market dashboard",
@@ -262,7 +262,7 @@ def make_server(
     port: int = 8766,
     token: Optional[str] = None,
 ) -> ThreadingHTTPServer:
-    service = JanusService(store or JanusStore(load_settings().database))
+    service = JanusService(store or open_store(load_settings().database))
     handler = type(
         "BoundJanusHandler",
         (JanusHandler,),
