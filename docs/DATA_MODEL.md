@@ -63,19 +63,11 @@ snapshot.
 ### `share_request` / `share_audit`
 
 `share_request` stores a pending, approved, or rejected share payload with its
-`as_of`, snapshot hash, requester, approver, and signed envelope. `share_audit`
-is append-only: every request, approval, and rejection records an actor and
-timestamp. Migration v6 adds both tables; model artifacts live in the
-file-backed registry, not in the database.
-
-### `share_request` / `share_audit`
-
-`share_request` stores a pending, approved, or rejected share payload with its
 `as_of`, snapshot hash, requester, approver, and signed envelope. The envelope
 is bound to the request id and records the approver and approval time inside the
 signature. `share_audit` is append-only: database triggers reject UPDATE and
 DELETE, and every request, approval, and rejection records an actor and
-timestamp. Migration v11 adds both tables.
+timestamp. Migration v12 adds both tables.
 
 ### `ingestion_run` / `ingestion_dead_letter`
 
@@ -187,6 +179,21 @@ The `observed` mode is intentionally different: it can include a row whose
 publication timestamp is in the future if the system ingested it early. That is
 a data-quality anomaly, not a license to use future knowledge; the published
 mode remains the default.
+
+## Encryption at rest
+
+Free-text columns in `thesis` (`statement`, `assumptions`, `catalysts`,
+`risks`, `falsifiers`), `prediction.target` and `outcome.realized_value` are
+sealed with AES-256-GCM under the data key named by the row's `key_id`. The data
+key is wrapped by the master key (KEK) and stored in `encryption_key`;
+`key_id IS NULL` means the row predates migration. Rotation progress lives in
+`encryption_rotation(target, last_rowid)`, so an interrupted rotation resumes.
+Ids, timestamps, statuses, numbers and hashes stay plaintext, which keeps `as_of`
+filtering, ordering and pagination independent of ciphertext. Each ciphertext is
+bound to `<table>.<column>:<row id>`, so a value moved to another column or row
+fails authentication. Blobs stay content-addressed by the plaintext SHA-256
+(`raw_hash`/`raw_uri` unchanged) while their contents are sealed. Full key
+hierarchy, migration and recovery: `docs/adr/0005-encryption-at-rest.md`.
 
 ## Immutability
 
