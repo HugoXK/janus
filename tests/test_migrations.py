@@ -40,19 +40,21 @@ def test_fresh_store_has_the_current_schema() -> None:
     assert "key_id" in _columns(store._conn, "thesis")
     assert "key_id" in _columns(store._conn, "prediction")
     assert "key_id" in _columns(store._conn, "outcome")
+    assert "share_request" in _tables(store._conn)
+    assert "share_audit" in _tables(store._conn)
     assert "snapshot_id" in _columns(store._conn, "observation")
 
 
 def test_migrations_are_idempotent() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     assert apply_migrations(connection) == []
     assert current_version(connection) == LATEST_VERSION
 
 
 def test_dry_run_does_not_write() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     assert current_version(connection) == 0
     assert "observation" not in _tables(connection)
     assert "schema_migrations" not in _tables(connection)
@@ -76,4 +78,5 @@ def test_applied_versions_are_recorded() -> None:
         (9, "audit_chain"),
         (10, "mcp_scoped_auth"),
         (11, "encryption_at_rest"),
+        (12, "sharing"),
     ]

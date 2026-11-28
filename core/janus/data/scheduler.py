@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from uuid import uuid4
 
 from ..memory.models import Observation, utcnow
 from ..memory.store import JanusStore
+from ..logging import log_event
 from .base import DataSource
 
 
@@ -83,6 +85,13 @@ class IngestionScheduler:
             (run_id, source.name, started_at),
         )
         self.store.connection.commit()
+        log_event(
+            "ingestion.start",
+            run_id=run_id,
+            source=source.name,
+            entities=len(entities),
+            as_of=end.isoformat(),
+        )
 
         if self.max_concurrency == 1:
             counts = self._run_sequential(run_id, source, entities, start, end)
@@ -99,6 +108,17 @@ class IngestionScheduler:
             (utcnow().isoformat(), status, json.dumps(counts, sort_keys=True), run_id),
         )
         self.store.connection.commit()
+        log_event(
+            "ingestion.complete",
+            run_id=run_id,
+            source=source.name,
+            status=status,
+            as_of=end.isoformat(),
+            fetched=counts["fetched"],
+            stored=counts["stored"],
+            failed=counts["failed"],
+            dead_letters=counts["dead_letters"],
+        )
         return IngestionResult(
             run_id=run_id,
             source=source.name,
@@ -125,6 +145,15 @@ class IngestionScheduler:
                 failed += 1
                 dead_letters += 1
                 self._record_dead_letter(run_id, source.name, entity_id, outcome.error)
+                log_event(
+                    "ingestion.dead_letter",
+                    level=logging.ERROR,
+                    run_id=run_id,
+                    source=source.name,
+                    entity_id=entity_id,
+                    as_of=end.isoformat(),
+                    error=outcome.error,
+                )
                 continue
             fetched += len(outcome.observations)
             try:
@@ -181,6 +210,15 @@ class IngestionScheduler:
                 failed += 1
                 dead_letters += 1
                 self._record_dead_letter(run_id, source.name, entity_id, outcome.error)
+                log_event(
+                    "ingestion.dead_letter",
+                    level=logging.ERROR,
+                    run_id=run_id,
+                    source=source.name,
+                    entity_id=entity_id,
+                    as_of=end.isoformat(),
+                    error=outcome.error,
+                )
                 continue
             fetched += len(outcome.observations)
             try:
