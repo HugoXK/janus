@@ -177,7 +177,7 @@ class AuditChain:
         if kind not in AUDIT_KINDS:
             raise ValueError(f"unsupported audit kind: {kind}")
         stamp = _recorded_at_text(recorded_at or utcnow())
-        body = canonical_json(payload)
+        body = canonical_json(self._sealed_payload(kind, ref_id, payload))
 
         with self.store.locked():
             row = self.store.connection.execute(
@@ -332,6 +332,57 @@ class AuditChain:
                 if (kind, ref_id) not in audited:
                     raise UnchainedRowError(kind, ref_id)
 
+    def _sealed_payload(
+        self, kind: str, ref_id: str, payload: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Seal the sensitive fields of a ledger payload before chaining it.
+
+        The chain stores the same fields the store seals: ``prediction.target``
+        and ``outcome.realized_value``. The ciphertext is bound to
+        ``audit.<kind>:<ref_id>`` so it cannot be swapped between entries.
+        """
+
+        sealer = self.store.sealer
+        if sealer is None:
+            return dict(payload)
+        sealed = dict(payload)
+        if kind == "prediction" and "target" in sealed:
+            sealed["target"] = sealer.seal(
+                str(sealed["target"]).encode("utf-8"),
+                context=f"audit.{kind}:{ref_id}",
+            )
+        elif kind == "outcome" and "realized_value" in sealed:
+            sealed["realized_value"] = sealer.seal(
+                canonical_json(sealed["realized_value"]).encode("utf-8"),
+                context=f"audit.{kind}:{ref_id}",
+            )
+        return sealed
+
+    def _plain_payload(self, entry: AuditEntry) -> dict[str, Any]:
+        """Unseal a stored payload for the live-source comparison.
+
+        Plaintext entries written before encryption stay readable: only tokens
+        are unsealed.
+        """
+
+        payload = dict(entry.payload)
+        sealer = self.store.sealer
+        if sealer is None:
+            return payload
+        value = payload.get("target")
+        if isinstance(value, str) and sealer.is_sealed(value):
+            payload["target"] = sealer.unseal(
+                value, context=f"audit.{entry.kind}:{entry.ref_id}"
+            ).decode("utf-8")
+        realized = payload.get("realized_value")
+        if isinstance(realized, str) and sealer.is_sealed(realized):
+            payload["realized_value"] = json.loads(
+                sealer.unseal(
+                    realized, context=f"audit.{entry.kind}:{entry.ref_id}"
+                ).decode("utf-8")
+            )
+        return payload
+
     def _check_source(self, entry: AuditEntry) -> None:
         if entry.kind == "prediction":
             prediction = self.store.get_prediction(entry.ref_id)
@@ -350,7 +401,7 @@ class AuditChain:
             # Shares and overrides are audited payloads; no live source table
             # exists yet, so the chain itself is the record.
             return
-        if canonical_json(current) != canonical_json(entry.payload):
+        if canonical_json(current) != canonical_json(self._plain_payload(entry)):
             raise SourceDriftError(entry.kind, entry.ref_id)
 
     def _check_checkpoint(

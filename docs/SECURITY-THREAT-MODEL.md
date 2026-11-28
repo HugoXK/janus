@@ -76,19 +76,24 @@ the same OS user cannot be told apart from a locally fitted one
 | Threat | Impact | Mitigation | Status | Residual risk |
 | --- | --- | --- | --- | --- |
 | Provider API keys stored in plaintext in `config.toml` or the environment | Key theft, quota abuse, terms-of-service breach | Environment variables are preferred; `Settings` keeps keys out of `repr` and `redacted()` masks them in CLI output (defined in `core/janus/config.py`; surfaced by `janus config show` in `core/janus/cli.py`) | partial | No keychain or encryption; file permissions depend on the OS umask |
-| The SQLite store is readable and writable by any process running as the user | Disclosure of research history; silent tampering with observations, forecasts and reviews | None; the database is a plain SQLite file | not implemented | Copies and backups inherit the same exposure |
+| The SQLite store is readable and writable by any process running as the user | Disclosure of research history; silent tampering with observations, forecasts and reviews | Free-text thesis/prediction/outcome fields are AES-256-GCM sealed under a per-store data key wrapped by the master key (`core/janus/memory/encryption.py`, `store.py`); `janus keys` reports/rotates keys and migrates plaintext rows with a backup | partial | Observation values, features, reviews and model artifacts stay plaintext; a process that can read the environment can read the KEK |
+| Raw source documents in the blob store are readable on a copied disk, sync folder or backup | Licensed or personal payload disclosure | `EncryptedBlobStore` seals contents (`janus1.<key_id>.<nonce>.<ciphertext>`) while keeping the plaintext digest as the path; migration and rotation via `janus keys` (`docs/adr/0005-encryption-at-rest.md`) | implemented | Cache files remain plaintext; blob retention/deletion stays manual |
 | Licensed market data cached on disk can be copied or redistributed | Terms-of-service breach | Documented policy: respect each provider's terms and do not redistribute licensed data (`SECURITY.md`); the repository ignores `*.db`, `/data/` and `*.parquet` (`.gitignore`) | partial | The cache has no provenance or expiry metadata and nothing enforces the policy |
 | Secrets committed to the repository | Credential leak in public history | `gitleaks` runs on every push to `main` and every pull request as a blocking job (`.github/workflows/security.yml:15-25`); `.env`, `*.pem` and `*.key` are ignored (`.gitignore`) | implemented | Pattern-based scanning misses novel secret formats; files copied outside the repository are not scanned |
 | Environment variables (`JANUS_HOME`, `JANUS_CONFIG`, `JANUS_DB`) redirect reads and writes | An actor able to set the environment chooses which store the process opens | None; this is the local CLI configuration contract | not implemented | Accepted for a single-user local tool: the same actor already runs the process |
 
 **Open risks — local data at rest**
 
-- There is no encryption at rest. Tamper evidence covers predictions, outcomes,
-  shares and overrides through the audit chain (`docs/AUDIT-CHAIN.md`);
-  observations, theses and reviews are not chained. This is detection, not
-  prevention, and it is not a signature.
-- Cache and blob files are raw provider payloads; their retention and deletion
-  policy is manual.
+- The listed free-text fields and blob contents are sealed (ADR 0005), and the
+  audit chain gives tamper evidence for predictions, outcomes, shares and
+  overrides (`docs/AUDIT-CHAIN.md`); observation values, features, reviews and
+  model artifacts are still plaintext, and the chain is detection, not a
+  signature.
+- Cache files remain raw provider payloads; blob retention and deletion policy
+  is manual. `janus keys status` reports unsealed blobs but does not delete
+  them. Blob filenames stay the plaintext SHA-256, so a holder of a candidate
+  document can confirm whether it is in the store; content addressing is kept
+  deliberately.
 - The threat model does not cover the operating system, disk encryption, or
   backups; those are the workflow owner's responsibility.
 
