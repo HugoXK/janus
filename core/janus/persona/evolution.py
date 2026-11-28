@@ -13,6 +13,13 @@ from ..memory.models import Persona
 from .profile import DIMENSIONS
 from .weighting import PersonaPolicy, build_persona
 
+#: A promotion needs at least this many held-out scenarios. Below this floor a
+#: Brier delta cannot be distinguished from noise, so the baseline is retained.
+MIN_VALIDATION_SIZE = 5
+
+#: Default minimum held-out Brier improvement required for promotion.
+DEFAULT_IMPROVEMENT_THRESHOLD = 0.01
+
 
 def _clip(value: float) -> float:
     return max(0.0, min(1.0, value))
@@ -158,14 +165,16 @@ def evolve(
     mutation_rate: float = 0.2,
     elite_fraction: float = 0.1,
     heldout_fraction: float = 0.25,
-    improvement_threshold: float = 0.0,
+    improvement_threshold: float = DEFAULT_IMPROVEMENT_THRESHOLD,
     base_profile: Optional[dict[str, float]] = None,
 ) -> EvolutionResult:
     """Deterministic evolutionary search with a held-out promotion gate.
 
     The search optimizes training Brier score only. A candidate is promoted only
-    when validation Brier improves by more than ``improvement_threshold`` over
-    the neutral baseline; otherwise the baseline persona is returned.
+    when the held-out set has at least :data:`MIN_VALIDATION_SIZE` scenarios and
+    validation Brier improves by more than ``improvement_threshold`` (default
+    :data:`DEFAULT_IMPROVEMENT_THRESHOLD`) over the neutral baseline; otherwise
+    the baseline persona is returned.
     """
 
     if generations < 1 or population_size < 2:
@@ -213,7 +222,8 @@ def evolve(
     best = min(population, key=lambda profile: _fitness(profile, train).brier)
     validation_fitness = _fitness(best, validation)
     improvement = baseline_validation.brier - validation_fitness.brier
-    promoted = improvement > improvement_threshold
+    enough_validation = len(validation) >= MIN_VALIDATION_SIZE
+    promoted = enough_validation and improvement > improvement_threshold
     chosen = best if promoted else baseline_profile
     persona = build_persona(profile=chosen, name="Evolved" if promoted else "Baseline")
     generation_count = len(history)
@@ -232,13 +242,21 @@ def evolve(
             "created_at": train[-1].resolved_at,
         }
     )
-    reason = (
-        f"validation Brier improved by {improvement:.4f} "
-        f"(threshold {improvement_threshold:.4f})"
-        if promoted
-        else f"held-out Brier did not improve by {improvement_threshold:.4f}; "
-        "baseline retained"
-    )
+    if promoted:
+        reason = (
+            f"validation Brier improved by {improvement:.4f} "
+            f"(threshold {improvement_threshold:.4f})"
+        )
+    elif not enough_validation:
+        reason = (
+            f"held-out set has {len(validation)} scenarios "
+            f"(minimum {MIN_VALIDATION_SIZE}); baseline retained"
+        )
+    else:
+        reason = (
+            f"held-out Brier did not improve by {improvement_threshold:.4f}; "
+            "baseline retained"
+        )
     return EvolutionResult(
         seed=seed,
         generations=tuple(history),

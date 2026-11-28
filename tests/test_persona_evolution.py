@@ -93,3 +93,55 @@ def test_invalid_inputs_are_rejected() -> None:
             outcome=1.0,
             features={},
         )
+
+
+def _noise_scenarios(count: int = 40) -> list[EvolutionScenario]:
+    """Outcomes alternate but the features carry no signal at all."""
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return [
+        EvolutionScenario(
+            id=f"n{index}",
+            as_of=start + timedelta(days=index),
+            resolved_at=start + timedelta(days=index + 30),
+            outcome=1.0 if index % 2 == 0 else 0.0,
+            features={"rsi_14": 50.0, "return_21d": 0.0, "breadth": 0.5},
+        )
+        for index in range(count)
+    ]
+
+
+def test_pure_noise_is_not_promoted_at_defaults() -> None:
+    scenarios = _noise_scenarios()
+    for seed in range(1, 6):
+        result = evolve(scenarios, seed=seed, generations=10, population_size=16)
+        assert result.promoted is False, (seed, result.reason)
+        assert result.persona.version == "baseline"
+        assert "baseline retained" in result.reason
+
+
+def test_strong_signal_is_promoted_at_defaults() -> None:
+    result = evolve(_scenarios(), seed=5)
+    assert result.promoted is True, result.reason
+    assert result.persona.version.startswith("evolved-5-")
+
+
+def test_small_heldout_set_is_never_promoted() -> None:
+    result = evolve(
+        _scenarios(8),
+        seed=3,
+        generations=6,
+        population_size=12,
+        improvement_threshold=-10.0,
+    )
+    assert result.promoted is False
+    assert result.persona.version == "baseline"
+    assert "minimum 5" in result.reason
+
+
+def test_validation_ids_are_the_latest_scenarios() -> None:
+    scenarios = _scenarios()
+    result = evolve(scenarios, seed=11, generations=4, population_size=10)
+    ordered = sorted(scenarios, key=lambda scenario: (scenario.as_of, scenario.id))
+    assert result.validation_ids == tuple(scenario.id for scenario in ordered[-10:])
+    assert set(result.train_ids).isdisjoint(result.validation_ids)
