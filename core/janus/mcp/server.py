@@ -41,6 +41,8 @@ TOOLS = [
     "janus_source_citation",
     "janus_persona_list",
     "janus_beliefbench_run",
+    "janus_scenario_tree",
+    "janus_quantile_forecast",
 ]
 
 
@@ -188,6 +190,34 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    def janus_scenario_tree(
+        entity_id: str,
+        horizon: str,
+        as_of: str,
+        direction_probability: float,
+        volatility: float = 0.02,
+        trend: float = 0.0,
+        evidence: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Generate a scenario tree whose probabilities sum to one."""
+        return service.scenario_tree(
+            entity_id=entity_id,
+            horizon=horizon,
+            as_of=as_of,
+            direction_probability=direction_probability,
+            volatility=volatility,
+            trend=trend,
+            evidence=evidence,
+        )
+
+    @server.tool()
+    def janus_quantile_forecast(
+        returns: list[float], horizon: int = 1
+    ) -> dict[str, Any]:
+        """Return empirical 10/50/90 return quantiles and interval width."""
+        return service.quantile_forecast(returns, horizon=horizon)
 
     @server.tool()
     def janus_security_resolve(
