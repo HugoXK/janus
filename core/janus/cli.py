@@ -1060,6 +1060,57 @@ def review_calibration(
 
 
 @app.command()
+def quality(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    limit: Optional[int] = typer.Option(
+        500, "--limit", help="Newest observations to inspect (1-5000)"
+    ),
+    max_age_days: int = typer.Option(
+        7, "--max-age-days", help="Staleness threshold in days"
+    ),
+    all_rows: bool = typer.Option(
+        False, "--all", help="Inspect every observation knowable at as-of"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run duplicate/provenance/price/staleness checks over an as-of view."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
+    from .mcp.service import JanusService
+
+    try:
+        payload = JanusService(_open_store(db)).quality_report(
+            entity,
+            stamp,
+            limit=None if all_rows else limit,
+            max_age_days=max_age_days,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    window = payload["window"]
+    typer.echo(
+        f"{entity} as_of={payload['as_of']} checked={payload['checked']} "
+        f"errors={len(payload['errors'])} warnings={len(payload['warnings'])} "
+        f"truncated={payload['truncated']} "
+        f"window={window['from']}..{window['to']}"
+    )
+    for issue in payload["errors"] + payload["warnings"]:
+        typer.echo(f"- {issue['severity']}: {issue['code']} {issue['message']}")
+
+
+@app.command()
 def provenance(
     observation_id: str = typer.Argument(..., help="Observation id"),
     db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),

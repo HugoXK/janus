@@ -47,6 +47,7 @@ TOOL_SCOPES: dict[str, str] = {
     "janus_forecast_settle": WRITE,
     "janus_review_debrief": WRITE,
     "janus_calibrate": READ,
+    "janus_quality": READ,
     "janus_entity_resolve": READ,
     "janus_entity_show": READ,
     "janus_entity_list": READ,
