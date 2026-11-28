@@ -151,6 +151,7 @@ No performance claims yet. The scaffold proves the invariants:
 | Shared SQLite access is serialized across worker threads | `tests/test_store_threading.py` |
 | Conflicting facts keep both sides and resolve by an audited policy | `tests/test_conflicts.py` |
 | Fundamentals are as-filed, provenance-linked, and event flags cite ids | `tests/test_fundamentals.py` |
+| Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
