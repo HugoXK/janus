@@ -18,6 +18,7 @@ from ..memory.models import ObservationKind
 from ..memory.store import JanusStore
 from ..review.debrief import debrief_prediction
 from ..thesis.tracker import ThesisTracker
+from .auth import AuthorizationError, Authorizer
 
 
 def _parse_time(value: datetime | str) -> datetime:
@@ -35,13 +36,56 @@ def _dump(model: Any) -> dict[str, Any]:
 
 
 class JanusService:
-    """The transport-independent surface behind MCP and the CLI."""
+    """The transport-independent surface behind MCP and the CLI.
+
+    ``authorizer`` is optional for backwards compatibility with the trusted
+    local CLI, but the MCP server always supplies one. When it is present,
+    every tool and resource checks its declared scope here, so calling the
+    service directly cannot bypass the FastMCP wrapper.
+    """
 
     def __init__(
-        self, store: JanusStore, scenarios_root: Optional[Path] = None
+        self,
+        store: JanusStore,
+        scenarios_root: Optional[Path] = None,
+        authorizer: Optional[Authorizer] = None,
     ) -> None:
         self.store = store
         self.scenarios_root = scenarios_root
+        self.authorizer = authorizer
+
+    # ------------------------------------------------------------------
+    # Scoped access
+    # ------------------------------------------------------------------
+    def require_read(self, tool: str) -> None:
+        if self.authorizer is not None:
+            self.authorizer.require_read(tool)
+
+    def require_resource(self, uri: str) -> None:
+        if self.authorizer is not None:
+            self.authorizer.require_resource(uri)
+
+    def _write(
+        self, tool: str, arguments: dict[str, Any], action: Callable[[], Any]
+    ) -> Any:
+        if self.authorizer is None:
+            return action()
+        return self.authorizer.authorize_write(tool, arguments, action)
+
+    def list_approvals(self, as_of: str | datetime | None = None) -> list[dict[str, Any]]:
+        if self.authorizer is None:
+            raise AuthorizationError(
+                "scope_denied", "approvals require a scoped authorizer"
+            )
+        stamp = _parse_time(as_of) if as_of is not None else None
+        return self.authorizer.list_approvals(stamp)
+
+    def decide_approval(self, approval_id: str, decision: str) -> dict[str, Any]:
+        if self.authorizer is None:
+            raise AuthorizationError(
+                "scope_denied", "approvals require a scoped authorizer"
+            )
+        return self.authorizer.decide(approval_id, decision)
 
     def as_of_query(
         self,
@@ -53,6 +97,7 @@ class JanusService:
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
+        self.require_read("janus_as_of_query")
         observation_kind = ObservationKind(kind) if kind else None
         rows = self.store.query_observations_as_of(
             entity_id,
@@ -65,6 +110,36 @@ class JanusService:
         return [_dump(row) for row in rows]
 
     def create_thesis(
+        self,
+        *,
+        entity_id: str,
+        statement: str,
+        horizon: str,
+        as_of: str | datetime,
+        persona_id: Optional[str] = None,
+        assumptions: Optional[list[str]] = None,
+        catalysts: Optional[list[str]] = None,
+        risks: Optional[list[str]] = None,
+        falsifiers: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "entity_id": entity_id,
+            "statement": statement,
+            "horizon": horizon,
+            "as_of": as_of,
+            "persona_id": persona_id,
+            "assumptions": assumptions,
+            "catalysts": catalysts,
+            "risks": risks,
+            "falsifiers": falsifiers,
+        }
+        return self._write(
+            "janus_thesis_create",
+            arguments,
+            lambda: self._create_thesis(**arguments),
+        )
+
+    def _create_thesis(
         self,
         *,
         entity_id: str,
@@ -91,9 +166,38 @@ class JanusService:
         return _dump(thesis)
 
     def list_theses(self) -> list[dict[str, Any]]:
+        self.require_read("janus_thesis_list")
         return [_dump(thesis) for thesis in self.store.list_theses()]
 
     def create_forecast(
+        self,
+        *,
+        thesis_id: str,
+        target: str,
+        horizon: str,
+        as_of: str | datetime,
+        probability: float,
+        model_version: str,
+        features_hash: str,
+        quantiles: Optional[dict[str, float]] = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "thesis_id": thesis_id,
+            "target": target,
+            "horizon": horizon,
+            "as_of": as_of,
+            "probability": probability,
+            "model_version": model_version,
+            "features_hash": features_hash,
+            "quantiles": quantiles,
+        }
+        return self._write(
+            "janus_forecast_create",
+            arguments,
+            lambda: self._create_forecast(**arguments),
+        )
+
+    def _create_forecast(
         self,
         *,
         thesis_id: str,
@@ -120,12 +224,35 @@ class JanusService:
     def list_forecasts(
         self, thesis_id: Optional[str] = None
     ) -> list[dict[str, Any]]:
+        self.require_read("janus_forecast_list")
         return [
             _dump(prediction)
             for prediction in self.store.list_predictions(thesis_id=thesis_id)
         ]
 
     def settle_forecast(
+        self,
+        *,
+        prediction_id: str,
+        start_price: float,
+        end_price: float,
+        realized_at: str | datetime,
+        source: str = "mcp",
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "prediction_id": prediction_id,
+            "start_price": start_price,
+            "end_price": end_price,
+            "realized_at": realized_at,
+            "source": source,
+        }
+        return self._write(
+            "janus_forecast_settle",
+            arguments,
+            lambda: self._settle_forecast(**arguments),
+        )
+
+    def _settle_forecast(
         self,
         *,
         prediction_id: str,
@@ -153,6 +280,28 @@ class JanusService:
         calibration: Optional[float] = None,
         lessons: str = "",
     ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "prediction_id": prediction_id,
+            "features": features,
+            "regime": regime,
+            "calibration": calibration,
+            "lessons": lessons,
+        }
+        return self._write(
+            "janus_review_debrief",
+            arguments,
+            lambda: self._debrief(**arguments),
+        )
+
+    def _debrief(
+        self,
+        *,
+        prediction_id: str,
+        features: dict[str, float],
+        regime: Optional[str] = None,
+        calibration: Optional[float] = None,
+        lessons: str = "",
+    ) -> dict[str, Any]:
         review = debrief_prediction(
             self.store,
             prediction_id=prediction_id,
@@ -164,14 +313,17 @@ class JanusService:
         return _dump(review)
 
     def calibrate(self) -> dict[str, Any]:
+        self.require_read("janus_calibrate")
         return asdict(CalibrationService.from_store(self.store))
 
     def provenance_trace(self, observation_id: str) -> dict[str, Any]:
+        self.require_read("janus_provenance_trace")
         from ..memory.provenance import ProvenanceTracer
 
         return ProvenanceTracer(self.store).require(observation_id).to_dict()
 
     def provenance_catalog(self, limit: int = 200) -> list[dict[str, Any]]:
+        self.require_resource("janus://provenance")
         from ..memory.provenance import ProvenanceTracer
 
         return [
@@ -182,6 +334,7 @@ class JanusService:
     def security_resolve(
         self, symbol: str, as_of: str | datetime, *, exchange: Optional[str] = None
     ) -> dict[str, Any]:
+        self.require_read("janus_security_resolve")
         from ..memory.security_master import SecurityMaster
 
         security = SecurityMaster(self.store).resolve(
@@ -199,6 +352,7 @@ class JanusService:
     def universe_members(
         self, universe: str, as_of: str | datetime
     ) -> list[dict[str, Any]]:
+        self.require_read("janus_universe_members")
         from ..memory.security_master import SecurityMaster
 
         return [
@@ -211,6 +365,7 @@ class JanusService:
     def corporate_actions(
         self, security_id: Optional[str] = None, as_of: Optional[str | datetime] = None
     ) -> list[dict[str, Any]]:
+        self.require_read("janus_corporate_actions")
         from ..memory.corporate_actions import CorporateActionLedger
 
         stamp = _parse_time(as_of) if as_of is not None else None
@@ -224,6 +379,7 @@ class JanusService:
     def adjust_price(
         self, security_id: str, raw_price: float, as_of: str | datetime
     ) -> dict[str, Any]:
+        self.require_read("janus_adjust_price")
         from ..memory.corporate_actions import CorporateActionLedger
 
         return CorporateActionLedger(self.store).adjust_price(
@@ -231,6 +387,7 @@ class JanusService:
         )
 
     def source_spans(self, observation_id: str) -> list[dict[str, Any]]:
+        self.require_read("janus_source_spans")
         from ..memory.spans import SpanStore
 
         return [span.to_dict() for span in SpanStore(self.store).list(observation_id)]
@@ -238,6 +395,7 @@ class JanusService:
     def source_citation(
         self, observation_id: str, span_id: Optional[str] = None
     ) -> dict[str, Any]:
+        self.require_read("janus_source_citation")
         from ..memory.spans import SpanStore
 
         return SpanStore(self.store).citation(
@@ -245,6 +403,7 @@ class JanusService:
         ).to_dict()
 
     def list_personas(self) -> list[dict[str, Any]]:
+        self.require_read("janus_persona_list")
         return [_dump(persona) for persona in self.store.list_personas()]
 
     def scenario_tree(
@@ -344,6 +503,7 @@ class JanusService:
     def beliefbench(
         self, scenarios_path: str, baseline: str = "always_up"
     ) -> dict[str, Any]:
+        self.require_read("janus_beliefbench_run")
         path = Path(scenarios_path).resolve()
         if self.scenarios_root is not None:
             root = self.scenarios_root.resolve()

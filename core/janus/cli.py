@@ -28,6 +28,7 @@ from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
+from .memory.snapshot_archive import export_snapshot, import_snapshot, verify_snapshot
 
 app = typer.Typer(
     add_completion=False,
@@ -41,6 +42,7 @@ security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
 actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.")
 spans_app = typer.Typer(help="Inspect exact source spans and citations.")
+mcp_app = typer.Typer(help="Inspect scoped MCP approvals and audit records.")
 audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
@@ -50,6 +52,7 @@ app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
 app.add_typer(spans_app, name="spans")
+app.add_typer(mcp_app, name="mcp")
 app.add_typer(audit_app, name="audit")
 
 
@@ -308,6 +311,126 @@ def serve(
         pass
     finally:
         server.server_close()
+def _scoped_authorizer(db: Optional[str]):
+    from .mcp.auth import authorizer_from_env
+
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    return store, authorizer_from_env(store)
+
+
+def _emit_auth_error(exc: Exception) -> None:
+    from .mcp.auth import AuthorizationError
+
+    if isinstance(exc, AuthorizationError):
+        typer.echo(json.dumps({"error": exc.to_dict()}, indent=2, sort_keys=True), err=True)
+        raise typer.Exit(code=1)
+    raise exc
+
+
+@mcp_app.command("approve")
+def mcp_approve(
+    approval_id: str = typer.Argument(..., help="Approval id, e.g. apv-..."),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Approve one pending MCP write request (requires an admin token)."""
+
+    from .mcp.auth import AuthorizationError
+
+    store, authorizer = _scoped_authorizer(db)
+    try:
+        approval = authorizer.decide(approval_id, "approve")
+    except AuthorizationError as exc:
+        _emit_auth_error(exc)
+        return
+    finally:
+        store.close()
+    if as_json:
+        typer.echo(json.dumps(approval, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"approved {approval['id']} ({approval['tool']})")
+
+
+@mcp_app.command("deny")
+def mcp_deny(
+    approval_id: str = typer.Argument(..., help="Approval id, e.g. apv-..."),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Deny one pending MCP write request (requires an admin token)."""
+
+    from .mcp.auth import AuthorizationError
+
+    store, authorizer = _scoped_authorizer(db)
+    try:
+        approval = authorizer.decide(approval_id, "deny")
+    except AuthorizationError as exc:
+        _emit_auth_error(exc)
+        return
+    finally:
+        store.close()
+    if as_json:
+        typer.echo(json.dumps(approval, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"denied {approval['id']} ({approval['tool']})")
+
+
+@mcp_app.command("approvals")
+def mcp_approvals(
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List MCP write approvals, optionally as of a point in time."""
+
+    from .mcp.auth import AuthorizationError
+
+    store, authorizer = _scoped_authorizer(db)
+    try:
+        stamp = _as_of_option(as_of) if as_of else None
+        approvals = authorizer.list_approvals(stamp)
+    except AuthorizationError as exc:
+        _emit_auth_error(exc)
+        return
+    finally:
+        store.close()
+    if as_json:
+        typer.echo(json.dumps(approvals, indent=2, sort_keys=True))
+    else:
+        for approval in approvals:
+            typer.echo(
+                f"{approval['id']}  {approval['decision']:<8}  "
+                f"{approval['tool']}  {approval['caller_id']}  "
+                f"expires={approval['expires_at']}"
+            )
+
+
+@mcp_app.command("audit")
+def mcp_audit(
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp"),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Maximum rows"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show the append-only MCP audit trail."""
+
+    store, authorizer = _scoped_authorizer(db)
+    try:
+        stamp = _as_of_option(as_of) if as_of else None
+        rows = authorizer.audit(stamp, limit)
+    finally:
+        store.close()
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, sort_keys=True))
+    else:
+        for row in rows:
+            typer.echo(
+                f"{row['recorded_at']}  {row['decision']:<18}  "
+                f"{row['tool']}  {row['caller_id']}  {row['code'] or ''}"
+            )
+
+
 def _as_of_option(value: str) -> datetime:
     try:
         stamp = datetime.fromisoformat(value)
@@ -646,3 +769,83 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+archive_app = typer.Typer(help="Export, import, and verify as-of snapshot archives.")
+app.add_typer(archive_app, name="archive")
+
+
+@archive_app.command("export")
+def archive_export(
+    out: Path = typer.Option(..., "--out", help="Archive directory"),
+    as_of: str = typer.Option(..., "--as-of", help="Snapshot as-of timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    no_parquet: bool = typer.Option(False, "--no-parquet", help="Skip Parquet files"),
+    as_json: bool = typer.Option(False, "--json", help="Emit manifest JSON"),
+) -> None:
+    """Write a hash-manifested as-of snapshot archive."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    settings = load_settings()
+    try:
+        manifest = export_snapshot(
+            JanusStore(db or settings.database),
+            out,
+            as_of=stamp,
+            parquet=not no_parquet,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        typer.echo(json.dumps(manifest, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"wrote {out} observations={manifest['counts']['observations']} "
+            f"features={manifest['counts']['features']} "
+            f"hash={manifest['snapshot_hash'][:12]}"
+        )
+
+
+@archive_app.command("verify")
+def archive_verify(
+    directory: Path = typer.Argument(..., help="Archive directory"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Verify an archive manifest and every referenced file."""
+
+    result = verify_snapshot(directory)
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    elif result.ok:
+        typer.echo(f"ok snapshot={result.snapshot_hash[:12]}")
+    else:
+        for error in result.errors:
+            typer.echo(error, err=True)
+    if not result.ok:
+        raise typer.Exit(code=1)
+
+
+@archive_app.command("import")
+def archive_import(
+    directory: Path = typer.Argument(..., help="Archive directory"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    skip_verify: bool = typer.Option(False, "--skip-verify", help="Skip manifest checks"),
+) -> None:
+    """Import a verified archive into a store."""
+
+    settings = load_settings()
+    try:
+        counts = import_snapshot(
+            JanusStore(db or settings.database), directory, verify=not skip_verify
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"imported observations={counts['observations']} features={counts['features']}"
+    )
+
