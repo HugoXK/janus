@@ -62,11 +62,30 @@ core/janus/
   persona/       profile vector and master priors
   eval/          BeliefBench and walk-forward skeleton
   share/         approval-first signed sharing
-  share/         approval-first signed sharing
   mcp/           optional MCP server
+  logging.py     JSON logs, correlation scopes, value-level redaction
   cli.py         local CLI
   demo.py        offline end-to-end demo
 ```
+
+## Logging and correlation
+
+`core/janus/logging.py` provides one structured event path and is wired into the
+running program: the CLI `@app.callback()` exposes `--log-format text|json` and
+`--log-level`, both routed through `configure_logging()`, and the ingestion
+scheduler emits `ingestion.start`, `ingestion.dead_letter`, and
+`ingestion.complete` events with the run id. `log_event()` merges the active
+`correlation_scope()` fields (for example `run_id`, `source`, `entity_id`, and
+`as_of`) into one JSON object per line.
+
+Redaction is **value-level**, not key-name-level: `redact()` scans every string
+at any depth, so a provider or HTTP error carrying `?api_key=...`,
+`Authorization: Bearer ...`, a PEM private-key block, a `sk-…`/`sk_live_…`/
+`ghp_…`/`AKIA…` token shape, or `https://user:pass@host` userinfo is masked
+whether or not its mapping key looks sensitive. `JsonFormatter` scrubs
+`message`, `event`, and `exception`; `TextFormatter` scrubs the rendered line.
+Keys that look sensitive are masked wholesale, and structured event fields can
+never overwrite the `timestamp`/`level`/`logger`/`message` envelope.
 
 ## Non-goals for V1
 
