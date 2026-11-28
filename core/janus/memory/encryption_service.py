@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -299,6 +300,12 @@ def retire(
         raise KeyInUseError(
             f"key {key_id!r} is still used by {usage} rows; rotate them first"
         )
+    audit_usage = _audit_key_usage(store, key_id)
+    if audit_usage:
+        raise KeyInUseError(
+            f"key {key_id!r} sealed {audit_usage} audit entries; rotation cannot "
+            "re-seal them without breaking the chain, so keep this key"
+        )
     blob_usage = 0
     if blob_root is not None:
         from janus.data.blob import EncryptedBlobStore
@@ -319,6 +326,36 @@ def retire(
     if manager is None:
         raise KeyMissingError("this store has no data keys")
     manager.retire(key_id)
+
+
+def _audit_key_usage(store: JanusStore, key_id: str) -> int:
+    """Count audit-entry payloads sealed under ``key_id``.
+
+    Audit entries cannot be re-sealed by rotation: their hash covers the stored
+    payload bytes. A key that sealed an entry must therefore stay available.
+    """
+
+    sealer = store.sealer
+    if sealer is None:
+        return 0
+    used = 0
+    rows = store.connection.execute("SELECT payload FROM audit_entry").fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(str(row[0]))
+        except (TypeError, ValueError):
+            continue
+        for field in ("target", "realized_value"):
+            value = payload.get(field)
+            if not isinstance(value, str) or not sealer.is_sealed(value):
+                continue
+            try:
+                if sealer.key_id_of(value) == key_id:
+                    used += 1
+                    break
+            except EncryptionError:
+                continue
+    return used
 
 
 def _backup_database(store: JanusStore, backup_path: Optional[Path]) -> Path:

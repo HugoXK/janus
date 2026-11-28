@@ -681,3 +681,34 @@ def test_open_store_reports_a_typed_error_without_the_key(tmp_path: Path) -> Non
     with pytest.raises(KeyMissingError) as excinfo:
         open_store(db, environ={})
     assert excinfo.value.code == "key_missing"
+
+
+def test_retire_refuses_while_audit_payloads_use_the_key(tmp_path: Path) -> None:
+    from janus.forecast.ledger import PredictionLedger
+    from janus.memory.audit import AuditChain
+
+    db = tmp_path / "janus.db"
+    store = JanusStore(db, master_key=MASTER)
+    ledger = PredictionLedger(store)
+    prediction = ledger.record(
+        thesis_id="t1",
+        target=f"{MARKER} audited target",
+        horizon="1M",
+        as_of=NOW,
+        model_version="m1",
+        features_hash="h1",
+    )
+    ledger.settle(
+        prediction.id,
+        realized_value={"marker": MARKER},
+        source="manual",
+        realized_at=NOW,
+    )
+
+    rotate(store)  # rows move to k2; sealed audit payloads stay on k1
+    assert AuditChain(store).verify().count == 2
+    with pytest.raises(KeyInUseError, match="audit entries"):
+        retire(store, "k1", assume_no_blobs=True)
+    assert "k1" in {key.key_id for key in store.key_manager.keys()}
+    assert AuditChain(store).verify().count == 2
+    store.close()

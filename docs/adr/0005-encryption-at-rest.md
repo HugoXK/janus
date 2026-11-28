@@ -82,11 +82,14 @@ migrated, so `janus demo` and the test suite keep working on a fresh store.
 3. an interrupted run resumes with the same key id; completed rows are skipped
    because their `key_id` already matches;
 4. blobs are re-wrapped file by file under the same active key;
-5. `janus keys retire --key-id K` deletes the old key only when no row or blob
-   references it (`key_in_use` otherwise). It counts sealed blobs when
-   `--blob-root` is given and otherwise refuses unless `--no-blobs` explicitly
-   asserts the store has none, so a key that could still open a blob is never
-   deleted by accident.
+5. `janus keys retire --key-id K` deletes the old key only when no row, blob,
+   or audit entry references it (`key_in_use` otherwise). Audit entries are
+   sealed with the key active when they were appended and are **not** re-sealed
+   by rotation, because their chain hash covers the stored payload bytes; a key
+   that sealed an entry is therefore retained. The command counts sealed blobs
+   when `--blob-root` is given and otherwise refuses unless `--no-blobs`
+   explicitly asserts the store has none, so a key that could still open a blob
+   is never deleted by accident.
 
 **Migration from plaintext v0.1** (`janus keys migrate`):
 
