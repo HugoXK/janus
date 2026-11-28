@@ -1,4 +1,4 @@
-"""SBOM generator contract (AC1-AC6 of #59).
+"""SBOM generator contract (AC1-AC6 of #59, AC1-AC7 of #81).
 
 Red on the unfixed tip: `ModuleNotFoundError: No module named 'scripts.generate_sbom'`
 (the import below fails at collection; that IS the red).
@@ -7,6 +7,29 @@ Offline, deterministic, clock-free: every case runs the generator as a subproces
 `tmp_path` inputs, except the source inspection which reads the module as text. Nothing
 here touches the network or the real repository files, and no test asserts the literal
 `[project].version` or schema version.
+
+#81 — what is derived and what is deliberately pinned
+-----------------------------------------------------
+The dependency inventories are *derived from the repository's own manifests at test
+time*, so a legitimate dependabot bump stays green:
+
+* Python: names, constraints, group and marker come from `pyproject.toml`.
+* npm: names and resolved versions come from `dsh-plugin/package-lock.json`, read here
+  from the `packages` paths only -- deliberately NOT via `scripts/generate_sbom.py`, so
+  a generator that renamed or quietly skipped an entry cannot agree with itself.
+
+What stays a **deliberate tripwire**, and must not be "fixed" into a derived check:
+
+* `EXPECTED_PYTHON_NAMES` below -- the exact 14 Python components. Adding or removing a
+  declared Python dependency must be a conscious test edit, not silently absorbed.
+* The contract *properties* per component: `janus:version_source`, the purl form, the
+  ordering, and the rule that every lockfile entry appears exactly once. These are what
+  the test exists to defend; `_npm_problems` returns violations and the test asserts an
+  empty list, and `test_npm_checker_*` proves each kind of violation still trips.
+* `test_identity_tracks_content` writes its own synthetic lockfile in `tmp_path` and
+  bumps that file's single `typescript` entry `5.9.3` -> `5.9.4`. No assertion in that
+  case reads the repository's real lockfile, so a legitimate dependabot bump cannot red
+  it (#81).
 """
 
 from __future__ import annotations
@@ -42,6 +65,26 @@ STDLIB_ALLOWLIST = {
 }
 
 GROUP_NAMES = ("runtime", "dev", "mcp", "data")
+
+# Deliberate tripwire (#81 AC2): the exact Python inventory. This is the one literal
+# name set on the Python side; everything about each component (constraint, group,
+# marker) is derived from pyproject.toml.
+EXPECTED_PYTHON_NAMES = {
+    "pydantic",
+    "pandas",
+    "numpy",
+    "httpx",
+    "typer",
+    "rich",
+    "tomli",
+    "pytest",
+    "pytest-cov",
+    "hypothesis",
+    "ruff",
+    "mypy",
+    "mcp",
+    "yfinance",
+}
 
 
 def _run(
@@ -93,17 +136,22 @@ def _expected_python() -> dict[str, tuple[str, str, str | None]]:
     return expected
 
 
-def _expected_npm() -> dict[str, str]:
-    lock = json.loads(LOCK.read_text(encoding="utf-8"))
-    packages: dict[str, str] = {}
-    for path, entry in lock.get("packages", {}).items():
-        if not path or path == ".":
+def _lockfile_entries(lock: dict[str, Any]) -> list[tuple[str, str]]:
+    """[(name, resolved version)] read from the lockfile's `packages` paths.
+
+    Deliberately independent of the generator: the name is taken from the install
+    path (`node_modules/<name>`), never from `entry["name"]`, so the check cannot
+    inherit a generator bug that rewrites names.
+    """
+    entries: list[tuple[str, str]] = []
+    for location, entry in lock.get("packages", {}).items():
+        if not location or location == "." or not isinstance(entry, dict):
             continue
-        name = entry.get("name") or path.split("node_modules/")[-1]
+        name = location.rsplit("node_modules/", 1)[-1]
         version = entry.get("version")
-        if name and version:
-            packages[name] = version
-    return packages
+        if name and isinstance(version, str) and version:
+            entries.append((name, version))
+    return entries
 
 
 def _props(component: dict[str, Any]) -> dict[str, str]:
@@ -123,6 +171,59 @@ def _by_source(doc: dict[str, Any], source: str) -> dict[str, dict[str, Any]]:
         for component in _components(doc)
         if _props(component).get("janus:version_source") == source
     }
+
+
+def _npm_components(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """npm components by purl, not by property: a wrong source is still seen."""
+    return [
+        component
+        for component in _components(doc)
+        if str(component.get("purl", "")).startswith("pkg:npm/")
+    ]
+
+
+def _npm_problems(doc: dict[str, Any], lock: dict[str, Any]) -> list[str]:
+    """Every violation of the npm half of the SBOM contract, as readable strings.
+
+    An empty list is the pass condition; each `test_npm_checker_*` case below feeds a
+    deliberately broken document and proves the matching violation still trips.
+    """
+    expected = sorted(_lockfile_entries(lock))
+    components = _npm_components(doc)
+    actual = sorted((str(c.get("name")), str(c.get("version"))) for c in components)
+    problems: list[str] = []
+
+    missing = sorted(set(expected) - set(actual))
+    extra = sorted(set(actual) - set(expected))
+    if missing:
+        problems.append(f"lockfile packages missing from the SBOM: {missing}")
+    if extra:
+        problems.append(f"npm components not resolved from the lockfile: {extra}")
+    if not missing and not extra and expected != actual:
+        problems.append(
+            f"npm component multiplicity does not match the lockfile: {expected} != {actual}"
+        )
+
+    for component in components:
+        name = str(component.get("name"))
+        version = str(component.get("version"))
+        if component.get("type") != "library":
+            problems.append(f"{name}: type is not 'library': {component.get('type')!r}")
+        expected_purl = f"pkg:npm/{name.replace('@', '%40')}@{version}"
+        if component.get("purl") != expected_purl:
+            problems.append(f"{name}: purl is {component.get('purl')!r}, expected {expected_purl!r}")
+        props = _props(component)
+        if props.get("janus:version_source") != "lockfile":
+            problems.append(
+                f"{name}: janus:version_source is {props.get('janus:version_source')!r}"
+            )
+        if set(props) != {"janus:version_source"}:
+            problems.append(f"{name}: unexpected npm properties: {sorted(set(props))}")
+
+    ordered = [(str(c.get("name")), str(c.get("purl"))) for c in _components(doc)]
+    if ordered != sorted(ordered):
+        problems.append("components are not sorted by (name, purl)")
+    return problems
 
 
 def _serial_uuid(doc: dict[str, Any]) -> str:
@@ -147,6 +248,21 @@ def _walk_keys(value: Any) -> list[str]:
             keys.extend(_walk_keys(item))
         return keys
     return []
+
+
+def _copy(doc: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(doc))
+
+
+def _one_npm_name(lock: dict[str, Any]) -> str:
+    names = sorted({name for name, _ in _lockfile_entries(lock)})
+    assert names, "the lockfile has no npm packages"
+    return names[0]
+
+
+@pytest.fixture(scope="module")
+def lock_data() -> dict[str, Any]:
+    return json.loads(LOCK.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -192,8 +308,9 @@ def test_python_components_follow_the_declared_constraints(
     expected = _expected_python()
     components = _by_source(document, "declared-constraint")
 
-    assert len(expected) == 14
-    assert set(components) == set(expected)
+    # Tripwire, not derivation: the Python inventory is a conscious decision.
+    assert set(expected) == EXPECTED_PYTHON_NAMES
+    assert set(components) == EXPECTED_PYTHON_NAMES
     for name, (constraint, group, marker) in expected.items():
         component = components[name]
         assert component["type"] == "library"
@@ -221,22 +338,16 @@ def test_dependency_groups_cover_the_four_declared_groups(
 # AC3 -----------------------------------------------------------------------
 
 
-def test_npm_components_carry_the_resolved_versions(document: dict[str, Any]) -> None:
-    expected = _expected_npm()
-    components = _by_source(document, "lockfile")
+def test_npm_components_track_the_lockfile(
+    document: dict[str, Any], lock_data: dict[str, Any]
+) -> None:
+    entries = _lockfile_entries(lock_data)
 
-    assert expected == {
-        "@types/node": "22.20.5",
-        "typescript": "5.9.3",
-        "undici-types": "6.21.0",
-    }
-    assert set(components) == set(expected)
-    for name, version in expected.items():
-        component = components[name]
-        assert component["type"] == "library"
-        assert component["version"] == version
-        assert component["purl"] == f"pkg:npm/{name.replace('@', '%40')}@{version}"
-        assert _props(component)["janus:version_source"] == "lockfile"
+    # No literal inventory here: 3 packages today, 20 on PR #69's lockfile, and any
+    # legitimate growth must stay green. The properties are pinned, the set is derived.
+    assert entries, "the lockfile has no npm packages"
+    assert _npm_problems(document, lock_data) == []
+    assert len(_npm_components(document)) == len(entries)
 
 
 # AC4 -----------------------------------------------------------------------
@@ -284,11 +395,34 @@ def test_generator_imports_stay_inside_the_stdlib_allowlist() -> None:
 # AC5 -----------------------------------------------------------------------
 
 
+SYNTHETIC_NPM_LOCK: dict[str, Any] = {
+    "name": "dsh-plugin",
+    "version": "0.0.0",
+    "lockfileVersion": 3,
+    "requires": True,
+    "packages": {
+        "": {"name": "dsh-plugin", "version": "0.0.0"},
+        "node_modules/typescript": {
+            "name": "typescript",
+            "version": "5.9.3",
+            "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+            "integrity": "sha512-synthetic-fixture",
+        },
+    },
+}
+
+
 def _copy_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    """A real pyproject plus a fully synthetic npm lockfile.
+
+    The Python half intentionally tracks the repository manifest; the npm half must not
+    track the repository lockfile, or a legitimate dependabot bump would red this case
+    (#81). The synthetic lockfile carries exactly one `typescript` entry to bump.
+    """
     pyproject = tmp_path / "pyproject.toml"
     lock = tmp_path / "package-lock.json"
     pyproject.write_bytes(PYPROJECT.read_bytes())
-    lock.write_bytes(LOCK.read_bytes())
+    lock.write_text(json.dumps(SYNTHETIC_NPM_LOCK, indent=2) + "\n", encoding="utf-8")
     return pyproject, lock
 
 
@@ -311,6 +445,7 @@ def test_identity_tracks_content(tmp_path: Path) -> None:
     base = generate("base.json")
     again = generate("again.json")
     assert base["serialNumber"] == again["serialNumber"]
+    # Deliberate literal fixture (#81 AC4): this case synthesises one bump.
     assert _by_source(base, "lockfile")["typescript"]["version"] == "5.9.3"
 
     lock.write_text(
@@ -350,3 +485,80 @@ def test_malformed_lockfile_fails_closed(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert str(broken) in result.stderr
     assert not output.exists()
+
+
+# AC6 of #81 -----------------------------------------------------------------
+# These feed deliberately broken documents to the same checker the real assertion
+# uses, so "the assertion is derived now" can never quietly mean "the assertion is
+# gone". Each case must still fail.
+
+
+def test_npm_checker_rejects_a_dropped_component(
+    document: dict[str, Any], lock_data: dict[str, Any]
+) -> None:
+    name = _one_npm_name(lock_data)
+    broken = _copy(document)
+    broken["components"] = [c for c in _components(broken) if c["name"] != name]
+
+    problems = _npm_problems(broken, lock_data)
+
+    assert any(name in problem and "missing" in problem for problem in problems), problems
+
+
+def test_npm_checker_rejects_an_unknown_npm_component(
+    document: dict[str, Any], lock_data: dict[str, Any]
+) -> None:
+    broken = _copy(document)
+    broken["components"].append(
+        {
+            "type": "library",
+            "name": "@example/not-in-the-lockfile",
+            "version": "1.0.0",
+            "purl": "pkg:npm/%40example/not-in-the-lockfile@1.0.0",
+            "properties": [{"name": "janus:version_source", "value": "lockfile"}],
+        }
+    )
+
+    problems = _npm_problems(broken, lock_data)
+
+    assert any("not resolved from the lockfile" in problem for problem in problems), problems
+
+
+def test_npm_checker_rejects_a_wrong_version(
+    document: dict[str, Any], lock_data: dict[str, Any]
+) -> None:
+    name = _one_npm_name(lock_data)
+    broken = _copy(document)
+    component = next(c for c in broken["components"] if c["name"] == name)
+    component["version"] = "0.0.0-not-the-lockfile-version"
+
+    problems = _npm_problems(broken, lock_data)
+
+    assert any(name in problem for problem in problems), problems
+    assert any("purl" in problem or "lockfile" in problem for problem in problems), problems
+
+
+def test_npm_checker_rejects_a_wrong_version_source(
+    document: dict[str, Any], lock_data: dict[str, Any]
+) -> None:
+    name = _one_npm_name(lock_data)
+    broken = _copy(document)
+    component = next(c for c in broken["components"] if c["name"] == name)
+    for prop in component["properties"]:
+        if prop["name"] == "janus:version_source":
+            prop["value"] = "declared-constraint"
+
+    problems = _npm_problems(broken, lock_data)
+
+    assert any(name in problem and "janus:version_source" in problem for problem in problems), problems
+
+
+def test_npm_checker_rejects_unsorted_components(
+    document: dict[str, Any], lock_data: dict[str, Any]
+) -> None:
+    broken = _copy(document)
+    broken["components"] = list(reversed(_components(broken)))
+
+    problems = _npm_problems(broken, lock_data)
+
+    assert "components are not sorted by (name, purl)" in problems, problems
