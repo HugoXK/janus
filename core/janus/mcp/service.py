@@ -403,6 +403,7 @@ class JanusService:
         ).to_dict()
 
     def resolve_entity(self, alias: str) -> dict[str, Any]:
+        self.require_read("janus_entity_resolve")
         from ..memory.entities import EntityGraph
 
         entity = EntityGraph(self.store).resolve(alias)
@@ -411,6 +412,7 @@ class JanusService:
         return entity.to_dict()
 
     def get_entity(self, entity_id: str) -> dict[str, Any]:
+        self.require_read("janus_entity_show")
         from ..memory.entities import EntityGraph
 
         graph = EntityGraph(self.store)
@@ -423,6 +425,7 @@ class JanusService:
         }
 
     def list_entities(self, limit: int = 200) -> list[dict[str, Any]]:
+        self.require_read("janus_entity_list")
         from ..memory.entities import EntityGraph
 
         return [entity.to_dict() for entity in EntityGraph(self.store).list(limit)]
