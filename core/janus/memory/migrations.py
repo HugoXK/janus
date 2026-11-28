@@ -272,6 +272,31 @@ MIGRATIONS: list[Migration] = [
             ON source_span(observation_id, locator);
         """,
     ),
+    Migration(
+        version=9,
+        name="encryption_at_rest",
+        sql="""
+        ALTER TABLE thesis ADD COLUMN key_id TEXT;
+        ALTER TABLE prediction ADD COLUMN key_id TEXT;
+        ALTER TABLE outcome ADD COLUMN key_id TEXT;
+
+        CREATE TABLE IF NOT EXISTS encryption_key (
+            key_id       TEXT PRIMARY KEY,
+            wrapped_dek  TEXT NOT NULL,
+            state        TEXT NOT NULL,
+            created_at   TEXT NOT NULL,
+            retired_at   TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_encryption_key_active
+            ON encryption_key(state) WHERE state = 'active';
+
+        CREATE TABLE IF NOT EXISTS encryption_rotation (
+            target      TEXT PRIMARY KEY,
+            last_rowid  INTEGER NOT NULL DEFAULT 0,
+            updated_at  TEXT NOT NULL
+        );
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)

@@ -482,6 +482,14 @@ between a research tool and a confident guess.
 - Redaction is tested on a fixture.
 - Keys are never stored in the repository.
 
+**Implemented (JAN-147).** Envelope encryption at rest (KEK -> wrapped DEKs)
+for thesis/prediction/outcome free text and blob contents, with key ids,
+resumable rotation, plaintext migration with backup, and fail-closed typed
+errors: `janus keys init|status|migrate|rotate|retire`,
+`docs/adr/0005-encryption-at-rest.md`, `tests/test_encryption_at_rest.py`.
+Field-level redaction, observation-value encryption and database-wide
+encryption remain open under this entry.
+
 ### JAN-021 — As-of snapshot export / import and corpus lineage
 
 `area:memory` `type:feature` `priority:P1` `size:M` · **M1** · Depends: JAN-015, JAN-017

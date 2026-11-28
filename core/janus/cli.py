@@ -22,6 +22,7 @@ from .forecast.registry import (
 from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
+from .memory.encryption_cli import keys_app
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
@@ -43,6 +44,7 @@ app.add_typer(model_app, name="model")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
+app.add_typer(keys_app, name="keys")
 app.add_typer(spans_app, name="spans")
 
 
