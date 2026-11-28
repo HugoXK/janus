@@ -28,6 +28,7 @@ from .memory.encryption_cli import keys_app
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
+from .memory.snapshot_archive import export_snapshot, import_snapshot, verify_snapshot
 
 app = typer.Typer(
     add_completion=False,
@@ -757,3 +758,83 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+archive_app = typer.Typer(help="Export, import, and verify as-of snapshot archives.")
+app.add_typer(archive_app, name="archive")
+
+
+@archive_app.command("export")
+def archive_export(
+    out: Path = typer.Option(..., "--out", help="Archive directory"),
+    as_of: str = typer.Option(..., "--as-of", help="Snapshot as-of timestamp"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    no_parquet: bool = typer.Option(False, "--no-parquet", help="Skip Parquet files"),
+    as_json: bool = typer.Option(False, "--json", help="Emit manifest JSON"),
+) -> None:
+    """Write a hash-manifested as-of snapshot archive."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    settings = load_settings()
+    try:
+        manifest = export_snapshot(
+            JanusStore(db or settings.database),
+            out,
+            as_of=stamp,
+            parquet=not no_parquet,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        typer.echo(json.dumps(manifest, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"wrote {out} observations={manifest['counts']['observations']} "
+            f"features={manifest['counts']['features']} "
+            f"hash={manifest['snapshot_hash'][:12]}"
+        )
+
+
+@archive_app.command("verify")
+def archive_verify(
+    directory: Path = typer.Argument(..., help="Archive directory"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Verify an archive manifest and every referenced file."""
+
+    result = verify_snapshot(directory)
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    elif result.ok:
+        typer.echo(f"ok snapshot={result.snapshot_hash[:12]}")
+    else:
+        for error in result.errors:
+            typer.echo(error, err=True)
+    if not result.ok:
+        raise typer.Exit(code=1)
+
+
+@archive_app.command("import")
+def archive_import(
+    directory: Path = typer.Argument(..., help="Archive directory"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    skip_verify: bool = typer.Option(False, "--skip-verify", help="Skip manifest checks"),
+) -> None:
+    """Import a verified archive into a store."""
+
+    settings = load_settings()
+    try:
+        counts = import_snapshot(
+            JanusStore(db or settings.database), directory, verify=not skip_verify
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"imported observations={counts['observations']} features={counts['features']}"
+    )
+
