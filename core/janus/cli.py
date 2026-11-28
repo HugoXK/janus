@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -30,6 +31,8 @@ from .memory.retention import (
 )
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
+from .memory.encryption_cli import keys_app
+from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
@@ -42,6 +45,8 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+forecast_app = typer.Typer(help="Create, list, and settle forecasts.")
+review_app = typer.Typer(help="Debrief and calibration review.")
 blob_app = typer.Typer(help="Inspect and garbage-collect content-addressed blobs.")
 security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
@@ -53,10 +58,13 @@ audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain."
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(forecast_app, name="forecast")
+app.add_typer(review_app, name="review")
 app.add_typer(blob_app, name="blob")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
+app.add_typer(keys_app, name="keys")
 app.add_typer(spans_app, name="spans")
 app.add_typer(retention_app, name="retention")
 app.add_typer(mcp_app, name="mcp")
@@ -105,8 +113,8 @@ def asof(
             valid = ", ".join(item.value for item in ObservationKind)
             raise typer.BadParameter(f"kind must be one of: {valid}") from exc
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    load_settings()
+    store = _open_store(db)
     try:
         rows = store.query_observations_as_of(
             entity,
@@ -215,9 +223,9 @@ def blob_gc(
 ) -> None:
     """Delete blobs that no observation references."""
 
-    settings = load_settings()
+    load_settings()
     result = LocalBlobStore(_blob_root(root)).gc(
-        JanusStore(db or settings.database), dry_run=dry_run
+        _open_store(db), dry_run=dry_run
     )
     if as_json:
         typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
@@ -228,15 +236,47 @@ def blob_gc(
         )
 
 
+def _open_store(db: Optional[str]) -> JanusStore:
+    from .memory.encryption import EncryptionError
+    from .memory.store import open_store
+
+    settings = load_settings()
+    try:
+        return open_store(db or settings.database)
+    except EncryptionError as exc:
+        typer.echo(f"error [{exc.code}]: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 def _service(db: Optional[str]):
     from .mcp.service import JanusService
 
-    settings = load_settings()
-    return JanusService(JanusStore(db or settings.database))
+    return JanusService(_open_store(db))
 
 
 def _emit_json(payload) -> None:
-    typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    """Emit strict JSON; non-finite numbers are an error, not a bare token."""
+
+    try:
+        text = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise typer.BadParameter(f"output is not strict JSON: {exc}") from exc
+    typer.echo(text)
+
+
+def _reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite number: {value}")
+
+
+def _parse_number_map(raw: str, label: str) -> dict[str, float]:
+    try:
+        parsed = json.loads(raw, parse_constant=_reject_constant)
+        values = {str(key): float(value) for key, value in parsed.items()}
+    except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
+        raise typer.BadParameter(f"{label} must be a JSON object of finite numbers") from exc
+    if any(not math.isfinite(value) for value in values.values()):
+        raise typer.BadParameter(f"{label} must be a JSON object of finite numbers")
+    return values
 
 
 @app.command()
@@ -303,9 +343,9 @@ def serve(
 
     from .server import make_server
 
-    settings = load_settings()
+    load_settings()
     server = make_server(
-        JanusStore(db or settings.database),
+        _open_store(db),
         host=host,
         port=port,
         token=os.environ.get("JANUS_API_TOKEN") or None,
@@ -321,8 +361,8 @@ def serve(
 def _scoped_authorizer(db: Optional[str]):
     from .mcp.auth import authorizer_from_env
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    load_settings()
+    store = _open_store(db)
     return store, authorizer_from_env(store)
 
 
@@ -458,8 +498,8 @@ def security_resolve(
 ) -> None:
     """Resolve a symbol as it existed at one time."""
 
-    settings = load_settings()
-    security = SecurityMaster(JanusStore(db or settings.database)).resolve(
+    load_settings()
+    security = SecurityMaster(_open_store(db)).resolve(
         symbol, _as_of_option(as_of), exchange=exchange
     )
     if security is None:
@@ -482,8 +522,8 @@ def security_history(
 ) -> None:
     """Show every security-master row for a symbol."""
 
-    settings = load_settings()
-    rows = SecurityMaster(JanusStore(db or settings.database)).history(symbol)
+    load_settings()
+    rows = SecurityMaster(_open_store(db)).history(symbol)
     payload = [row.to_dict() for row in rows]
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -504,8 +544,8 @@ def universe_members(
 ) -> None:
     """Return the members that existed in a universe at one time."""
 
-    settings = load_settings()
-    rows = SecurityMaster(JanusStore(db or settings.database)).members(
+    load_settings()
+    rows = SecurityMaster(_open_store(db)).members(
         universe, _as_of_option(as_of)
     )
     payload = [row.to_dict() for row in rows]
@@ -525,9 +565,9 @@ def actions_list(
 ) -> None:
     """List corporate actions in effective-time order."""
 
-    settings = load_settings()
+    load_settings()
     stamp = _as_of_option(as_of) if as_of else None
-    rows = CorporateActionLedger(JanusStore(db or settings.database)).list(
+    rows = CorporateActionLedger(_open_store(db)).list(
         security_id, as_of=stamp
     )
     payload = [row.to_dict() for row in rows]
@@ -550,8 +590,8 @@ def actions_adjust(
 ) -> None:
     """Adjust a raw price and print the explicit basis."""
 
-    settings = load_settings()
-    payload = CorporateActionLedger(JanusStore(db or settings.database)).adjust_price(
+    load_settings()
+    payload = CorporateActionLedger(_open_store(db)).adjust_price(
         security_id, raw_price, _as_of_option(as_of)
     )
     if as_json:
@@ -571,8 +611,8 @@ def spans_list(
 ) -> None:
     """List exact source spans for one observation."""
 
-    settings = load_settings()
-    rows = SpanStore(JanusStore(db or settings.database)).list(observation_id)
+    load_settings()
+    rows = SpanStore(_open_store(db)).list(observation_id)
     payload = [row.to_dict() for row in rows]
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -592,9 +632,9 @@ def citation(
 ) -> None:
     """Print a citation backed by an exact source span."""
 
-    settings = load_settings()
+    load_settings()
     try:
-        result = SpanStore(JanusStore(db or settings.database)).citation(
+        result = SpanStore(_open_store(db)).citation(
             observation_id, span_id=span_id
         )
     except KeyError as exc:
@@ -619,8 +659,8 @@ def audit_verify(
 ) -> None:
     """Recompute the audit chain and check live rows against it."""
 
-    settings = load_settings()
-    chain = AuditChain(JanusStore(db or settings.database))
+    load_settings()
+    chain = AuditChain(_open_store(db))
     try:
         expected = (
             AuditChain.checkpoint_from_file(checkpoint) if checkpoint else None
@@ -653,8 +693,8 @@ def audit_export(
 ) -> None:
     """Export the chain and its head checkpoint for offline verification."""
 
-    settings = load_settings()
-    chain = AuditChain(JanusStore(db or settings.database))
+    load_settings()
+    chain = AuditChain(_open_store(db))
     checkpoint = chain.export(
         out, as_of=_as_of_option(as_of) if as_of else None
     )
@@ -699,9 +739,9 @@ def retention_apply(
         rules=tuple(_retention_rule(item) for item in (rule or [])),
         default_max_age_days=default_days,
     )
-    settings = load_settings()
+    load_settings()
     result = apply_retention(
-        JanusStore(db or settings.database),
+        _open_store(db),
         as_of=stamp,
         policy=policy,
         dry_run=dry_run,
@@ -734,12 +774,173 @@ def retention_export(
         raise typer.BadParameter(
             "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
         )
-    settings = load_settings()
-    rows = JanusStore(db or settings.database).query_observations_as_of(
+    load_settings()
+    rows = _open_store(db).query_observations_as_of(
         entity, stamp, mode="published"
     )
     target = export_redacted(rows, out, fields=field or [])
     typer.echo(f"wrote {len(rows)} redacted observation(s) to {target}")
+
+
+@forecast_app.command("list")
+def forecast_list(
+    thesis_id: Optional[str] = typer.Option(None, "--thesis-id", help="Filter by thesis"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List recorded forecasts."""
+
+    payload = _service(db).list_forecasts(thesis_id)
+    if as_json:
+        _emit_json(payload)
+        return
+    if not payload:
+        typer.echo("no forecasts")
+        return
+    for row in payload:
+        typer.echo(
+            f"{row['id']} {row['target']} p={row['probability']} "
+            f"as_of={row['as_of']} model={row['model_version']}"
+        )
+
+
+@forecast_app.command("create")
+def forecast_create(
+    thesis_id: str = typer.Option(..., "--thesis-id", help="Thesis id"),
+    target: str = typer.Option("direction", "--target", help="Forecast target"),
+    horizon: str = typer.Option("1M", "--horizon", help="Forecast horizon"),
+    probability: float = typer.Option(..., "--probability", help="P(up), 0..1"),
+    model_version: str = typer.Option(..., "--model-version", help="Model version"),
+    features_hash: str = typer.Option(..., "--features-hash", help="Feature vector hash"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    quantiles: Optional[str] = typer.Option(None, "--quantiles", help="JSON quantiles"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Record a forecast before its outcome exists."""
+
+    parsed_quantiles = _parse_number_map(quantiles, "--quantiles") if quantiles else None
+    try:
+        payload = _service(db).create_forecast(
+            thesis_id=thesis_id,
+            target=target,
+            horizon=horizon,
+            as_of=as_of,
+            probability=probability,
+            model_version=model_version,
+            features_hash=features_hash,
+            quantiles=parsed_quantiles,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+    else:
+        typer.echo(f"forecast {payload['id']} p={payload['probability']}")
+
+
+@forecast_app.command("settle")
+def forecast_settle(
+    prediction_id: str = typer.Argument(..., help="Prediction id"),
+    start_price: float = typer.Option(..., "--start-price", help="Start price"),
+    end_price: float = typer.Option(..., "--end-price", help="End price"),
+    realized_at: str = typer.Option(..., "--realized-at", help="Outcome timestamp"),
+    source: str = typer.Option("cli", "--source", help="Outcome source"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Settle a P(up) forecast against a price pair."""
+
+    for label, price in (("--start-price", start_price), ("--end-price", end_price)):
+        if not math.isfinite(price) or price <= 0:
+            raise typer.BadParameter(f"{label} must be a finite positive number")
+    try:
+        payload = _service(db).settle_forecast(
+            prediction_id=prediction_id,
+            start_price=start_price,
+            end_price=end_price,
+            realized_at=realized_at,
+            source=source,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+    else:
+        typer.echo(f"settled {prediction_id} score={payload['score']}")
+
+
+@review_app.command("debrief")
+def review_debrief(
+    prediction_id: str = typer.Argument(..., help="Prediction id"),
+    features: str = typer.Option(..., "--features", help="JSON feature object"),
+    regime: Optional[str] = typer.Option(None, "--regime", help="Regime label"),
+    calibration: Optional[float] = typer.Option(None, "--calibration", help="Calibration score"),
+    lessons: str = typer.Option("", "--lessons", help="Lessons learned"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Record a debrief for a settled prediction."""
+
+    parsed = _parse_number_map(features, "--features")
+    if calibration is not None and (
+        not math.isfinite(calibration) or not 0.0 <= calibration <= 1.0
+    ):
+        raise typer.BadParameter("--calibration must be a finite number in [0, 1]")
+    try:
+        payload = _service(db).debrief(
+            prediction_id=prediction_id,
+            features=parsed,
+            regime=regime,
+            calibration=calibration,
+            lessons=lessons,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+    else:
+        typer.echo(f"review {payload['id']} for {prediction_id}")
+
+
+@review_app.command("calibration")
+def review_calibration(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show the calibration report over settled predictions."""
+
+    payload = _service(db).calibrate()
+    if as_json:
+        _emit_json(payload)
+        return
+    typer.echo(
+        f"n={payload.get('n')} brier={payload.get('brier')} "
+        f"ece={payload.get('ece')} log_loss={payload.get('log_loss')}"
+    )
+
+
+@app.command()
+def provenance(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve an observation id to its citation and source span."""
+
+    load_settings()
+    tracer = ProvenanceTracer(_open_store(db))
+    try:
+        traced = tracer.require(observation_id)
+    except ProvenanceError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(
+            json.dumps(traced.to_dict(), indent=2, sort_keys=True, default=str)
+        )
+    else:
+        typer.echo(traced.citation)
 
 
 @app.command()
@@ -855,10 +1056,10 @@ def archive_export(
         raise typer.BadParameter("use an ISO timestamp") from exc
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    settings = load_settings()
+    load_settings()
     try:
         manifest = export_snapshot(
-            JanusStore(db or settings.database),
+            _open_store(db),
             out,
             as_of=stamp,
             parquet=not no_parquet,
@@ -902,10 +1103,10 @@ def archive_import(
 ) -> None:
     """Import a verified archive into a store."""
 
-    settings = load_settings()
+    load_settings()
     try:
         counts = import_snapshot(
-            JanusStore(db or settings.database), directory, verify=not skip_verify
+            _open_store(db), directory, verify=not skip_verify
         )
     except ValueError as exc:
         typer.echo(str(exc), err=True)

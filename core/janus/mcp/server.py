@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ..config import load_settings
-from ..memory.store import JanusStore
+from ..memory.store import JanusStore, open_store
 from .auth import AuthorizationError, Authorizer, authorizer_from_env
 from .service import JanusService
 
@@ -43,6 +43,7 @@ TOOLS = [
     "janus_source_citation",
     "janus_persona_list",
     "janus_beliefbench_run",
+    "janus_provenance_trace",
     "janus_mcp_approval_list",
     "janus_mcp_approval_decide",
     "janus_scenario_tree",
@@ -56,6 +57,7 @@ RESOURCES = [
     "janus://market",
     "janus://sector",
     "janus://stock",
+    "janus://provenance",
 ]
 
 
@@ -96,7 +98,7 @@ def build_server(
 
     server_class = _server_class()
 
-    janus_store = store or JanusStore(load_settings().database)
+    janus_store = store or open_store(load_settings().database)
     service = JanusService(
         janus_store,
         scenarios_root=scenarios_root or Path.cwd(),
@@ -242,6 +244,17 @@ def build_server(
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
+
+    @server.tool()
+    @_guarded
+    def janus_provenance_trace(observation_id: str) -> dict[str, Any]:
+        """Resolve an observation to its citation and source span."""
+        return service.provenance_trace(observation_id)
+
+    @server.resource("janus://provenance")
+    @_guarded_json
+    def provenance_resource() -> str:
+        return json.dumps(service.provenance_catalog(), default=str)
 
     @server.tool()
     @_guarded
