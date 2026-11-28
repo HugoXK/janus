@@ -3,6 +3,29 @@
 The analysis layer is deterministic and point-in-time. Every feature is computed
 from data known at `as_of`, and every materialized vector carries a hash.
 
+## Indicator engine (v1)
+
+`core/janus/analysis/indicators.py` owns the deterministic primitives:
+
+| Indicator | Parameters | Warmup | NaN policy |
+| --- | --- | --- | --- |
+| SMA | window | window | leading NaN |
+| EMA | span | 1 | from first |
+| RSI | window | window | neutral 50 |
+| MACD | fast/slow/signal | slow | from first |
+| ATR | window | window | leading NaN |
+| Bollinger | window/num_std | window | leading NaN |
+| OBV | none | 1 | from first |
+| VWAP | window or cumulative | 1 | leading NaN |
+| ROC | window | window | leading NaN |
+| Relative strength | benchmark | 1 | leading NaN |
+
+`INDICATOR_SPECS` records each warmup/NaN contract. `indicator_version(name,
+**params)` hashes the resolved parameters, so changing a window or a smoothing
+constant produces a new identifier instead of silently reusing the old one.
+Indicators are causal: a future row cannot change a historical value, and a
+test computes each indicator on a prefix to prove it.
+
 ## Feature registry (v1)
 
 | Feature | Definition | Notes |

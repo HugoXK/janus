@@ -7,13 +7,16 @@ criteria.
 
 ## How to read this
 
-**Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, JAN-005, JAN-007, JAN-039,
+**Current status (2026-11-24):** JAN-001, JAN-002, JAN-003, JAN-005, JAN-007, JAN-029, JAN-030, JAN-032, JAN-036, JAN-038, JAN-039,
 JAN-008, JAN-009, JAN-010, JAN-015, JAN-016, JAN-019, JAN-023, JAN-024, JAN-025,
 JAN-027, JAN-028, JAN-031 (tracker #39 / JAN-074), JAN-033, JAN-034, JAN-035,
 JAN-037, JAN-040, JAN-041,
 JAN-045, JAN-046, JAN-047, JAN-048, JAN-049, JAN-050, JAN-058, JAN-059,
-JAN-060, and JAN-061 are implemented. JAN-042 has the command/panel descriptors;
-DSH UI wiring and cron are deferred to v0.2. See `schemas/janus.schema.json`,
+JAN-060, and JAN-061 are implemented. JAN-022 is implemented. JAN-042 has the
+command/panel descriptors; DSH UI wiring and cron are deferred to v0.2. See
+JAN-060, and JAN-061 are implemented. JAN-041 and JAN-042 are implemented: DSH
+dock/panels, commands, HTTP panel API, and daily brief cron. See
+`schemas/janus.schema.json`,
 `tests/test_contracts.py`,
 `tests/test_migrations.py`, `tests/test_config.py`,
 `tests/test_asof_hypothesis.py`, `tests/test_tiingo.py`,
@@ -25,7 +28,10 @@ DSH UI wiring and cron are deferred to v0.2. See `schemas/janus.schema.json`,
 `tests/test_debrief.py`, `tests/test_persona_weighting.py`,
 `tests/test_mcp_service.py`, `tests/test_beliefbench.py`,
 `tests/test_gdelt.py`, `tests/test_rss.py`, `tests/test_scheduler.py`,
-`tests/test_quality.py`, `tests/test_persona_evolution.py`, and `tests/test_copy.py`.
+`tests/test_quality.py`, `tests/test_counterfactual.py`,
+`tests/test_persona_tournament.py`, `tests/test_blob.py`,
+`tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py`,
+`tests/test_server.py`, `tests/test_persona_evolution.py`, and `tests/test_copy.py`.
 
 - **Milestones** are delivery windows, not promises: M0 foundation, M1 data and
   memory, M2 analysis, M3 forecast and review, M4 interface, M5 evaluation and
