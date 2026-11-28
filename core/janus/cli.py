@@ -23,6 +23,7 @@ from .memory.migrations import apply_migrations, current_version
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
 from .memory.security_master import SecurityMaster
+from .memory.spans import SpanStore
 from .memory.store import JanusStore
 
 app = typer.Typer(
@@ -35,12 +36,14 @@ model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
 security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
 actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.")
+spans_app = typer.Typer(help="Inspect exact source spans and citations.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
+app.add_typer(spans_app, name="spans")
 
 
 @app.command()
@@ -381,6 +384,49 @@ def actions_adjust(
             f"{security_id} raw={payload['raw_price']} "
             f"adjusted={payload['adjusted_price']:.6f} basis={payload['basis']}"
         )
+
+
+@spans_app.command("list")
+def spans_list(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List exact source spans for one observation."""
+
+    settings = load_settings()
+    rows = SpanStore(JanusStore(db or settings.database)).list(observation_id)
+    payload = [row.to_dict() for row in rows]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    elif not payload:
+        typer.echo("no source spans")
+    else:
+        for row in payload:
+            typer.echo(f"{row['id']} {row['locator']} {row['excerpt'][:80]}")
+
+
+@app.command()
+def citation(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    span_id: Optional[str] = typer.Option(None, "--span", help="Specific span id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Print a citation backed by an exact source span."""
+
+    settings = load_settings()
+    try:
+        result = SpanStore(JanusStore(db or settings.database)).citation(
+            observation_id, span_id=span_id
+        )
+    except KeyError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(result.text)
 
 
 @app.command()
