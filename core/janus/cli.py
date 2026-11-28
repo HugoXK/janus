@@ -21,6 +21,7 @@ from .forecast.registry import (
     ModelArtifact,
     ModelRegistry,
 )
+from .memory.maintenance import backup, integrity_check, stats, vacuum
 from .memory.audit import AuditChain, AuditError
 from .memory.entities import EntityGraph
 from .memory.migrations import apply_migrations, current_version
@@ -57,6 +58,7 @@ retention_app = typer.Typer(help="Apply retention and export redacted data.")
 mcp_app = typer.Typer(help="Inspect scoped MCP approvals and audit records.")
 entity_app = typer.Typer(help="Resolve and inspect the entity graph.")
 audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
+db_app = typer.Typer(help="Check, back up, and maintain the SQLite store.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
@@ -72,6 +74,7 @@ app.add_typer(retention_app, name="retention")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(entity_app, name="entity")
 app.add_typer(audit_app, name="audit")
+app.add_typer(db_app, name="db")
 
 
 @app.command()
@@ -851,6 +854,73 @@ def retention_export(
     typer.echo(f"wrote {len(rows)} redacted observation(s) to {target}")
 
 
+@db_app.command("check")
+def db_check(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run SQLite integrity and foreign-key checks on a possibly corrupt file."""
+
+    settings = load_settings()
+    report = integrity_check(db or settings.database)
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"ok={report.ok} integrity={', '.join(report.integrity)} "
+            f"foreign_key_errors={len(report.foreign_key_errors)}"
+        )
+    if not report.ok:
+        raise typer.Exit(code=1)
+
+
+@db_app.command("backup")
+def db_backup(
+    out: Path = typer.Argument(..., help="Backup destination"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing non-empty target"
+    ),
+) -> None:
+    """Write a consistent SQLite backup."""
+
+    try:
+        target = backup(_open_store(db), out, force=force)
+    except FileExistsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"wrote {target}")
+
+
+@db_app.command("vacuum")
+def db_vacuum(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Reclaim unused SQLite space."""
+
+    try:
+        vacuum(_open_store(db))
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo("vacuum complete")
+
+
+@db_app.command("stats")
+def db_stats(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show row counts, file size, and schema version."""
+
+    payload = stats(_open_store(db))
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"path={payload['path']} bytes={payload['bytes']} "
+            f"rows={payload['total_rows']} schema={payload['schema_version']}"
+        )
 @forecast_app.command("list")
 def forecast_list(
     thesis_id: Optional[str] = typer.Option(None, "--thesis-id", help="Filter by thesis"),
