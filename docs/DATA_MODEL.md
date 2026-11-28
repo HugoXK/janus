@@ -76,6 +76,21 @@ version. Predictions reference an artifact through the existing `model_version`
 column using the `version@<artifact_id[:12]>` convention; no table or migration
 is added. See `docs/FORECASTING.md` for replay rules.
 
+## Source tiers and conflicts
+
+`core/janus/memory/conflicts.py` resolves competing observations only when both
+carry an explicit `fact`/`metric`/`field` key. The policy is ordered: source
+tier, observation confidence, corroborating-value count, then publication time.
+Source prefixes are matched case-insensitively and treat `-` and `_` alike.
+Both values stay in the report; a tie or a same-tier/same-time disagreement is
+explicitly `unresolved`. Human overrides are appended to a JSONL audit with the
+actor, reason, selected id, alternatives, and timestamp, never overwriting the
+original observations. Override files are single-writer: appends are not locked,
+so concurrent writers are unsupported, and readers skip unparseable lines and
+report how many were skipped. If the recorded selection no longer belongs to the
+rebuilt conflict group (for example after a restatement), the override is
+reported as `stale` with `selected_id=None` rather than re-pointing the group at
+a dangling observation.
 ## Security master and universe membership
 
 `security` stores symbol/exchange/share-class rows with `valid_from`/`valid_to`;

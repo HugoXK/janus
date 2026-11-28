@@ -149,6 +149,7 @@ No performance claims yet. The scaffold proves the invariants:
 | Local JSON API publishes an OpenAPI contract | `tests/test_server.py` |
 | DSH dock/cron reads the local JSON panel API | `tests/test_server.py` |
 | Shared SQLite access is serialized across worker threads | `tests/test_store_threading.py` |
+| Conflicting facts keep both sides and resolve by an audited policy | `tests/test_conflicts.py` |
 | Retention deletes only expired rows; redaction is deep and non-mutating | `tests/test_retention.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
