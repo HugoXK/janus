@@ -146,3 +146,55 @@ def test_cli_report_json_and_markdown(tmp_path, monkeypatch) -> None:
     )
     assert file_result.exit_code == 0, file_result.output
     assert "not investment advice" in out.read_text()
+
+
+def test_future_theses_and_forecasts_do_not_change_a_historical_report() -> None:
+    store = JanusStore(":memory:")
+    _seed(store)
+    as_of = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    before = build_research_report(store, "ACME", as_of).to_dict()
+
+    future = datetime(2026, 1, 12, tzinfo=timezone.utc)
+    thesis = ThesisTracker(store).create(
+        entity_id="ACME",
+        statement="Future thesis that did not exist at the as-of time",
+        horizon="1M",
+        as_of=future,
+    )
+    PredictionLedger(store).record(
+        thesis_id=thesis.id,
+        target="direction",
+        horizon="1M",
+        as_of=future,
+        model_version="logit-v1",
+        features_hash="features-future",
+        probability=0.6,
+    )
+
+    after = build_research_report(store, "ACME", as_of).to_dict()
+    assert after == before
+    assert all(
+        datetime.fromisoformat(item["as_of"].replace("Z", "+00:00")) <= as_of
+        for item in after["theses"] + after["forecasts"]
+    )
+
+
+def test_markdown_escapes_table_cells_and_labels_global_calibration() -> None:
+    store = JanusStore(":memory:")
+    _seed(store)
+    as_of = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    store.insert_observation(
+        Observation(
+            id="pipe-1",
+            entity_id="ACME",
+            kind=ObservationKind.news,
+            source="rss|feed",
+            published_at=as_of - timedelta(hours=2),
+            value={"title": "pipe"},
+            raw_hash="hash-pipe",
+        )
+    )
+
+    markdown = build_research_report(store, "ACME", as_of).to_markdown()
+    assert "rss\\|feed" in markdown
+    assert "store-wide (all entities, all times)" in markdown

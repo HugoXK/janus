@@ -760,10 +760,15 @@ def report(
         raise typer.BadParameter("use an ISO timestamp") from exc
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
+    if limit < 1 or limit > 10000:
+        raise typer.BadParameter("limit must be between 1 and 10000")
     settings = load_settings()
-    result = build_research_report(
-        JanusStore(db or settings.database), entity, stamp, limit=limit
-    )
+    try:
+        result = build_research_report(
+            JanusStore(db or settings.database), entity, stamp, limit=limit
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     if as_json:
         typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True, default=str))
         return

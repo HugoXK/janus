@@ -45,6 +45,18 @@ def _citation(observation: Observation) -> str:
     return f"{observation.source} {observation.published_at.isoformat()} {where}"
 
 
+def _cell(value: Any) -> str:
+    """Escape one Markdown table cell."""
+
+    return str(value).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+
+def _inline(value: Any) -> str:
+    """Keep free text on one Markdown line."""
+
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 @dataclass(frozen=True)
 class ResearchReport:
     entity_id: str
@@ -77,8 +89,8 @@ class ResearchReport:
             lines.extend(["| id | source | published | citation |", "| --- | --- | --- | --- |"])
             for item in self.evidence:
                 lines.append(
-                    f"| `{item['id']}` | {item['source']} | {item['published_at']} | "
-                    f"{item['citation']} |"
+                    f"| `{_cell(item['id'])}` | {_cell(item['source'])} | "
+                    f"{_cell(item['published_at'])} | {_cell(item['citation'])} |"
                 )
         else:
             lines.append("No evidence visible at this as-of time.")
@@ -87,8 +99,9 @@ class ResearchReport:
             for thesis in self.theses:
                 falsifiers = "; ".join(thesis.get("falsifiers", [])) or "none recorded"
                 lines.append(
-                    f"- **{thesis['id']}** ({thesis['horizon']}, {thesis['status']}): "
-                    f"{thesis['statement']}  \n  falsifiers: {falsifiers}"
+                    f"- **{_inline(thesis['id'])}** "
+                    f"({_inline(thesis['horizon'])}, {_inline(thesis['status'])}): "
+                    f"{_inline(thesis['statement'])}  \n  falsifiers: {_inline(falsifiers)}"
                 )
         else:
             lines.append("No theses recorded.")
@@ -107,6 +120,7 @@ class ResearchReport:
                 "",
                 "## Calibration",
                 "",
+                "- scope: store-wide (all entities, all times)",
                 f"- settled: {self.calibration.get('n')}",
                 f"- Brier: {self.calibration.get('brier')}",
                 f"- ECE: {self.calibration.get('ece')}",
@@ -151,13 +165,13 @@ def build_research_report(
     theses = [
         thesis.model_dump(mode="json")
         for thesis in store.list_theses()
-        if thesis.entity_id == entity_id
+        if thesis.entity_id == entity_id and thesis.as_of <= as_of
     ]
     thesis_ids = {thesis["id"] for thesis in theses}
     forecasts = [
         forecast.model_dump(mode="json")
         for forecast in store.list_predictions()
-        if forecast.thesis_id in thesis_ids
+        if forecast.thesis_id in thesis_ids and forecast.as_of <= as_of
     ]
     calibration = _sanitize(asdict(CalibrationService.from_store(store)))
     quality = _quality_payload(check_observations(observations, as_of=as_of))
