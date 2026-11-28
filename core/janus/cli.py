@@ -38,9 +38,10 @@ from .memory.encryption_cli import keys_app
 from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
-from .memory.store import JanusStore
 from .review.report import build_research_report
 from .memory.snapshot_archive import export_snapshot, import_snapshot, verify_snapshot
+from .memory.store import JanusStore
+
 
 app = typer.Typer(
     add_completion=False,
@@ -49,9 +50,16 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+persona_app = typer.Typer(help="Inspect personas and run calibration tournaments.")
 share_app = typer.Typer(help="Approval-first, signed sharing.")
 forecast_app = typer.Typer(help="Create, list, and settle forecasts.")
 review_app = typer.Typer(help="Debrief and calibration review.")
+app.add_typer(config_app, name="config")
+app.add_typer(schema_app, name="schema")
+app.add_typer(model_app, name="model")
+app.add_typer(persona_app, name="persona")
+app.add_typer(forecast_app, name="forecast")
+app.add_typer(review_app, name="review")
 blob_app = typer.Typer(help="Inspect and garbage-collect content-addressed blobs.")
 security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
@@ -62,12 +70,7 @@ mcp_app = typer.Typer(help="Inspect scoped MCP approvals and audit records.")
 entity_app = typer.Typer(help="Resolve and inspect the entity graph.")
 audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
 db_app = typer.Typer(help="Check, back up, and maintain the SQLite store.")
-app.add_typer(config_app, name="config")
-app.add_typer(schema_app, name="schema")
-app.add_typer(model_app, name="model")
 app.add_typer(share_app, name="share")
-app.add_typer(forecast_app, name="forecast")
-app.add_typer(review_app, name="review")
 app.add_typer(blob_app, name="blob")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
@@ -1342,6 +1345,131 @@ def provenance(
         )
     else:
         typer.echo(traced.citation)
+
+
+@app.command()
+def counterfactual(
+    prediction_id: str = typer.Argument(..., help="Prediction id to replay"),
+    remove: Optional[list[str]] = typer.Option(
+        None, "--remove", help="Evidence observation id to exclude (repeatable)"
+    ),
+    persona: Optional[str] = typer.Option(
+        None, "--persona", help="Counterfactual persona id"
+    ),
+    overrides: Optional[str] = typer.Option(
+        None, "--overrides", help="JSON feature overrides, e.g. '{\"rsi_14\": 30}'"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Replay a decision with swapped evidence or persona."""
+
+    from .review.counterfactual import CounterfactualReplay
+
+    parsed = _parse_number_map(overrides, "overrides") if overrides else {}
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    try:
+        report = CounterfactualReplay(store).replay(
+            prediction_id,
+            remove_evidence=remove or [],
+            persona_id=persona,
+            feature_overrides=parsed,
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = report.to_dict()
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    typer.echo(
+        f"{payload['prediction_id']} as_of={payload['as_of']} "
+        f"delta={payload['delta']:+.3f}"
+    )
+    typer.echo(
+        f"original: {payload['original']['probability']:.3f} "
+        f"({payload['original']['reasoning']})"
+    )
+    typer.echo(
+        f"counterfactual: {payload['counterfactual']['probability']:.3f} "
+        f"({payload['counterfactual']['reasoning']})"
+    )
+    typer.echo(payload["explanation"])
+
+
+@persona_app.command("list")
+def persona_list(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List stored personas and their weights."""
+
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    personas = [
+        {
+            "id": persona.id,
+            "name": persona.name,
+            "version": persona.version,
+            "weights": persona.weights,
+        }
+        for persona in store.list_personas()
+    ]
+    if as_json:
+        typer.echo(json.dumps(personas, indent=2, sort_keys=True))
+    elif not personas:
+        typer.echo("no personas")
+    else:
+        for persona in personas:
+            typer.echo(f"{persona['id']} {persona['name']} ({persona['version']})")
+
+
+@persona_app.command("tournament")
+def persona_tournament(
+    scenarios: Path = typer.Argument(..., help="Tournament scenario JSON"),
+    seed: int = typer.Option(7, "--seed", help="Bootstrap seed"),
+    bootstrap: int = typer.Option(1000, "--bootstrap", help="Bootstrap resamples"),
+    confidence: float = typer.Option(0.95, "--confidence", help="Interval confidence"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Compare every stored persona on the same fixed scenario set."""
+
+    from .persona.tournament import PersonaTournament
+
+    settings = load_settings()
+    store = JanusStore(db or settings.database)
+    try:
+        report = PersonaTournament.load(scenarios).run(
+            store.list_personas(),
+            seed=seed,
+            bootstrap=bootstrap,
+            confidence=confidence,
+        )
+    except (KeyError, ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = report.to_dict()
+    if as_json:
+        try:
+            typer.echo(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        return
+    typer.echo(
+        f"{payload['n_scenarios']} scenarios, {len(payload['personas'])} personas, "
+        f"seed={payload['seed']}, bootstrap={payload['bootstrap']}"
+    )
+    for result in payload["personas"]:
+        drawdown = (
+            f"{result['max_drawdown']:.3f}"
+            if result["max_drawdown"] is not None
+            else "-"
+        )
+        typer.echo(
+            f"{result['name']}: brier={result['brier']:.3f} "
+            f"[{result['brier_ci'][0]:.3f}, {result['brier_ci'][1]:.3f}] "
+            f"hit={result['hit_rate']:.3f} drawdown={drawdown}"
+        )
 
 
 @app.command()

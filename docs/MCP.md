@@ -32,6 +32,8 @@ The default store is the configured SQLite database. Tests inject
 | `janus_entity_list` | List entities in the graph |
 | `janus_persona_list` | List stored personas and weights |
 | `janus_beliefbench_run` | Run a baseline over a scenario file |
+| `janus_counterfactual_replay` | Replay a prediction with swapped evidence or persona |
+| `janus_persona_tournament` | Compare all personas on one fixed scenario set |
 | `janus_provenance_trace` | Resolve an observation to its citation and raw source |
 | `janus_corporate_actions` | List corporate actions, bounded by security and as-of |
 | `janus_adjust_price` | Split-adjusted price with an explicit basis |

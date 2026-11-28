@@ -472,6 +472,53 @@ class JanusService:
         self.require_read("janus_persona_list")
         return [_dump(persona) for persona in self.store.list_personas()]
 
+    def persona_tournament(
+        self,
+        scenarios_path: str,
+        *,
+        seed: int = 7,
+        bootstrap: int = 1000,
+        confidence: float = 0.95,
+    ) -> dict[str, Any]:
+        from ..persona.tournament import PersonaTournament
+
+        if self.scenarios_root is None:
+            raise ValueError("scenario path is unavailable: no scenarios root configured")
+        path = Path(scenarios_path).resolve()
+        root = self.scenarios_root.resolve()
+        if path != root and root not in path.parents:
+            raise ValueError("scenario path is outside the configured root")
+        if not 1 <= bootstrap <= 10000:
+            raise ValueError("bootstrap must be between 1 and 10000")
+        tournament = PersonaTournament.load(path)
+        report = tournament.run(
+            self.store.list_personas(),
+            seed=seed,
+            bootstrap=bootstrap,
+            confidence=confidence,
+        )
+        payload = report.to_dict()
+        json.dumps(payload, allow_nan=False)
+        return payload
+
+    def counterfactual_replay(
+        self,
+        *,
+        prediction_id: str,
+        remove_evidence: Optional[list[str]] = None,
+        persona_id: Optional[str] = None,
+        feature_overrides: Optional[dict[str, float]] = None,
+    ) -> dict[str, Any]:
+        from ..review.counterfactual import CounterfactualReplay
+
+        report = CounterfactualReplay(self.store).replay(
+            prediction_id,
+            remove_evidence=remove_evidence or [],
+            persona_id=persona_id,
+            feature_overrides=feature_overrides,
+        )
+        return report.to_dict()
+
     def scenario_tree(
         self,
         *,

@@ -55,6 +55,8 @@ TOOL_SCOPES: dict[str, str] = {
     "janus_universe_members": READ,
     "janus_persona_list": READ,
     "janus_beliefbench_run": READ,
+    "janus_counterfactual_replay": READ,
+    "janus_persona_tournament": READ,
     "janus_scenario_tree": READ,
     "janus_quantile_forecast": READ,
     "janus_corporate_actions": READ,
