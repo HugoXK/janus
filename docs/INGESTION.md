@@ -18,6 +18,15 @@ publication time.
 Adapters return `Observation` objects. They never write to the store directly;
 the scheduler owns persistence.
 
+## Blob store
+
+Raw documents are stored by SHA-256 in `core/janus/data/blob.py`. Identical
+payloads share one file; `put_json` canonicalizes before hashing. `metrics()`
+reports blob count and bytes, `verify()` detects tampering, and
+`gc(store)` deletes only blobs that no observation references through
+`raw_hash`. Deleting one observation therefore cannot orphan a blob still used
+by another. The CLI exposes `janus blob metrics` and `janus blob gc`.
+
 ## Scheduler
 
 ```python
@@ -47,8 +56,9 @@ print(result.fetched, result.stored, result.failed, result.dead_letters)
   even when other entities fetch in parallel.
 - Exhausted entities go to `ingestion_dead_letter`; `replay` retries them and
   stamps `replayed_at`.
-- `ingestion_run` records status and counts for each run. A failing entity makes
-  the status `partial`; a store error still aborts the run.
+- `ingestion_run` records status and counts for each run. A failing fetch or
+  store write becomes a per-entity dead letter, so the run ends `partial` instead
+  of aborting or staying `running`.
 
 ## Quality checks
 

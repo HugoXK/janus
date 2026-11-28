@@ -33,9 +33,17 @@ TOOLS = [
     "janus_forecast_settle",
     "janus_review_debrief",
     "janus_calibrate",
+    "janus_security_resolve",
+    "janus_universe_members",
+    "janus_corporate_actions",
+    "janus_adjust_price",
+    "janus_source_spans",
+    "janus_source_citation",
     "janus_persona_list",
     "janus_beliefbench_run",
     "janus_provenance_trace",
+    "janus_scenario_tree",
+    "janus_quantile_forecast",
 ]
 
 
@@ -192,6 +200,72 @@ def build_server(
     @server.resource("janus://provenance")
     def provenance_resource() -> str:
         return json.dumps(service.provenance_catalog(), default=str)
+
+    @server.tool()
+    def janus_scenario_tree(
+        entity_id: str,
+        horizon: str,
+        as_of: str,
+        direction_probability: float,
+        volatility: float = 0.02,
+        trend: float = 0.0,
+        evidence: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Generate a scenario tree whose probabilities sum to one."""
+        return service.scenario_tree(
+            entity_id=entity_id,
+            horizon=horizon,
+            as_of=as_of,
+            direction_probability=direction_probability,
+            volatility=volatility,
+            trend=trend,
+            evidence=evidence,
+        )
+
+    @server.tool()
+    def janus_quantile_forecast(
+        returns: list[float], horizon: int = 1
+    ) -> dict[str, Any]:
+        """Return empirical 10/50/90 return quantiles and interval width."""
+        return service.quantile_forecast(returns, horizon=horizon)
+
+    @server.tool()
+    def janus_security_resolve(
+        symbol: str, as_of: str, exchange: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Resolve a symbol to its security master row at an as-of time."""
+        return service.security_resolve(symbol, as_of, exchange=exchange)
+
+    @server.tool()
+    def janus_universe_members(universe: str, as_of: str) -> list[dict[str, Any]]:
+        """Return the point-in-time members of a universe."""
+        return service.universe_members(universe, as_of)
+
+    @server.tool()
+    def janus_corporate_actions(
+        security_id: Optional[str] = None, as_of: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """List corporate actions, optionally bounded by security and as-of."""
+        return service.corporate_actions(security_id, as_of)
+
+    @server.tool()
+    def janus_adjust_price(
+        security_id: str, raw_price: float, as_of: str
+    ) -> dict[str, Any]:
+        """Return a split-adjusted price with an explicit adjustment basis."""
+        return service.adjust_price(security_id, raw_price, as_of)
+
+    @server.tool()
+    def janus_source_spans(observation_id: str) -> list[dict[str, Any]]:
+        """List exact source spans attached to one observation."""
+        return service.source_spans(observation_id)
+
+    @server.tool()
+    def janus_source_citation(
+        observation_id: str, span_id: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Return a citation with the source span, locator, and excerpt."""
+        return service.source_citation(observation_id, span_id)
 
     @server.resource("janus://theses")
     def theses_resource() -> str:
