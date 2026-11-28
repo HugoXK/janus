@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -198,3 +199,30 @@ def test_markdown_escapes_table_cells_and_labels_global_calibration() -> None:
     markdown = build_research_report(store, "ACME", as_of).to_markdown()
     assert "rss\\|feed" in markdown
     assert "store-wide (all entities, all times)" in markdown
+
+
+def test_cli_report_opens_encrypted_store_with_env_key(tmp_path, monkeypatch) -> None:
+    key = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
+    db = tmp_path / "encrypted.db"
+    runner = CliRunner()
+
+    monkeypatch.setenv("JANUS_MASTER_KEY", key)
+    init = runner.invoke(app, ["keys", "init", "--db", str(db)])
+    assert init.exit_code == 0, init.output
+
+    args = [
+        "report",
+        "ACME",
+        "--as-of",
+        "2026-01-03T00:00:00+00:00",
+        "--db",
+        str(db),
+        "--json",
+    ]
+    ok = runner.invoke(app, args)
+    assert ok.exit_code == 0, ok.output
+
+    monkeypatch.delenv("JANUS_MASTER_KEY")
+    missing = runner.invoke(app, args)
+    assert missing.exit_code == 1
+    assert "key_missing" in missing.output
