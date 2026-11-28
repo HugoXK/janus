@@ -152,6 +152,7 @@ No performance claims yet. The scaffold proves the invariants:
 | Conflicting facts keep both sides and resolve by an audited policy | `tests/test_conflicts.py` |
 | Fundamentals are as-filed, provenance-linked, and event flags cite ids | `tests/test_fundamentals.py` |
 | Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
+| Retention deletes only expired rows; redaction is deep and non-mutating | `tests/test_retention.py` |
 | Persona evolution is seeded and held-out gated | `tests/test_persona_evolution.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |

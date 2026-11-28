@@ -10,7 +10,7 @@ from .models import (
     Thesis,
     ThesisStatus,
 )
-from .provenance import Provenance, ProvenanceTracer
+from .provenance import Provenance, ProvenanceError, ProvenanceTracer
 from .store import JanusStore
 
 __all__ = [
@@ -27,6 +27,7 @@ __all__ = [
     "EntityAlias",
     "EntityGraph",
     "Provenance",
+    "ProvenanceError",
     "ProvenanceTracer",
     "assert_no_lookahead",
     "observations_as_of",

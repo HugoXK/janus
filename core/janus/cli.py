@@ -22,8 +22,15 @@ from .forecast.registry import (
 )
 from .memory.audit import AuditChain, AuditError
 from .memory.migrations import apply_migrations, current_version
+from .memory.retention import (
+    RetentionPolicy,
+    RetentionRule,
+    apply_retention,
+    export_redacted,
+)
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
+from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
@@ -41,6 +48,7 @@ security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
 actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.")
 spans_app = typer.Typer(help="Inspect exact source spans and citations.")
+retention_app = typer.Typer(help="Apply retention and export redacted data.")
 mcp_app = typer.Typer(help="Inspect scoped MCP approvals and audit records.")
 audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
 app.add_typer(config_app, name="config")
@@ -51,6 +59,7 @@ app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
 app.add_typer(spans_app, name="spans")
+app.add_typer(retention_app, name="retention")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(audit_app, name="audit")
 
@@ -651,6 +660,110 @@ def audit_export(
         out, as_of=_as_of_option(as_of) if as_of else None
     )
     typer.echo(f"exported {checkpoint.count} entries to {out}")
+
+
+def _retention_rule(value: str) -> RetentionRule:
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise typer.BadParameter("rules use SOURCE:KIND:DAYS, e.g. rss:news:30")
+    source, kind, days = parts
+    try:
+        return RetentionRule(source=source, kind=kind, max_age_days=int(days))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@retention_app.command("apply")
+def retention_apply(
+    as_of: str = typer.Option(..., "--as-of", help="Retention cutoff timestamp"),
+    rule: Optional[list[str]] = typer.Option(
+        None, "--rule", help="SOURCE:KIND:DAYS (repeatable)"
+    ),
+    default_days: Optional[int] = typer.Option(
+        None, "--default-days", help="Fallback max age for unmatched rows"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report without deleting"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Delete observations whose retention window has expired."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
+    policy = RetentionPolicy(
+        rules=tuple(_retention_rule(item) for item in (rule or [])),
+        default_max_age_days=default_days,
+    )
+    settings = load_settings()
+    result = apply_retention(
+        JanusStore(db or settings.database),
+        as_of=stamp,
+        policy=policy,
+        dry_run=dry_run,
+    )
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"scanned={result.scanned} deleted={result.deleted} kept={result.kept}"
+        )
+
+
+@retention_app.command("export")
+def retention_export(
+    entity: str = typer.Argument(..., help="Entity id"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    out: Path = typer.Option(..., "--out", help="JSONL output path"),
+    field: Optional[list[str]] = typer.Option(
+        None, "--field", help="Field name to redact (repeatable)"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Export one entity's as-of observations with selected fields redacted."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
+    settings = load_settings()
+    rows = JanusStore(db or settings.database).query_observations_as_of(
+        entity, stamp, mode="published"
+    )
+    target = export_redacted(rows, out, fields=field or [])
+    typer.echo(f"wrote {len(rows)} redacted observation(s) to {target}")
+
+
+@app.command()
+def provenance(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve an observation id to its citation and source span."""
+
+    settings = load_settings()
+    tracer = ProvenanceTracer(JanusStore(db or settings.database))
+    try:
+        traced = tracer.require(observation_id)
+    except ProvenanceError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(
+            json.dumps(traced.to_dict(), indent=2, sort_keys=True, default=str)
+        )
+    else:
+        typer.echo(traced.citation)
 
 
 @app.command()
