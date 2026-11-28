@@ -159,3 +159,81 @@ def test_event_flags_carry_observation_ids() -> None:
     assert events["insider"] == ["insider"]
     assert events["guidance"] == ["guide"]
     assert "none" not in {item for ids in events.values() for item in ids}
+
+
+def _news(obs_id: str, title: str, form: str = "") -> Observation:
+    return Observation(
+        id=obs_id,
+        entity_id="ACME",
+        kind=ObservationKind.news,
+        source="rss",
+        published_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        value={"title": title, "form": form},
+        raw_hash=obs_id,
+    )
+
+
+def test_event_flags_ignore_near_miss_text() -> None:
+    events = detect_events(
+        [
+            _news("courtesy", "A courtesy update for shareholders"),
+            _news("courtyard", "The courtyard renovation is complete"),
+            _news("probation", "The probation period ends in May"),
+            _news("cycle", "Settlement cycle shortens to T+1"),
+            _news("probe", "Analysts probe the outlook for margins"),
+            _news("results", "Management discussed the results"),
+        ]
+    )
+    assert events == {}
+
+
+def test_event_flags_require_legal_or_company_context() -> None:
+    events = detect_events(
+        [
+            _news("legal", "ACME discloses a regulatory probe and a settlement agreement"),
+            _news("earn", "ACME reports quarterly financial results", "10-Q"),
+            _news("guide", "ACME raises its outlook for the fiscal year"),
+        ]
+    )
+    assert events["litigation"] == ["legal"]
+    assert events["earnings"] == ["earn"]
+    assert events["guidance"] == ["guide"]
+
+
+def test_non_finite_fact_values_are_treated_as_missing() -> None:
+    import json
+
+    store = JanusStore(":memory:")
+    store.insert_observation(_fact("rev-nan", "Revenues", float("nan"), "2025-12-31", "2026-01-15"))
+    store.insert_observation(_fact("rev-inf", "Revenues", float("inf"), "2025-06-30", "2025-07-15"))
+    report = compute_fundamental_features(
+        store, "ACME", datetime(2026, 2, 1, tzinfo=timezone.utc)
+    )
+    assert "revenue" not in report.features
+    # The report must stay strictly JSON-serialisable even with a corrupt feed.
+    json.dumps(report.to_dict(), allow_nan=False)
+
+
+def test_period_guard_excludes_later_periods_and_reports_periodless_facts() -> None:
+    store = JanusStore(":memory:")
+    store.insert_observation(
+        _fact("rev-future", "Revenues", 999.0, "2026-06-30", "2026-01-15")
+    )
+    store.insert_observation(
+        Observation(
+            id="rev-no-period",
+            entity_id="ACME",
+            kind=ObservationKind.fundamental,
+            source="sec_edgar",
+            published_at=_filed(date(2026, 1, 15)),
+            valid_from=None,
+            value={"concept": "Revenues", "value": 5.0},
+            raw_hash="hash:no-period",
+        )
+    )
+    report = compute_fundamental_features(
+        store, "ACME", datetime(2026, 2, 1, tzinfo=timezone.utc)
+    )
+    assert "revenue" not in report.features
+    assert report.skipped_period == ["rev-no-period"]
+    assert report.to_dict()["skipped_period"] == ["rev-no-period"]

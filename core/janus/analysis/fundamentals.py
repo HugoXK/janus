@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+import re
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Iterable, Optional, Sequence
 
@@ -28,12 +30,45 @@ EQUITY_CONCEPTS = (
 DEBT_CONCEPTS = ("LongTermDebt", "LongTermDebtNoncurrent", "DebtCurrent")
 EPS_CONCEPTS = ("EarningsPerShareDiluted", "EarningsPerShareBasic")
 
+# Patterns are matched on word boundaries. Ambiguous words (`results`, `probe`,
+# `settlement`, `outlook`) only fire with legal/company context, because the
+# bare substring misclassifies ordinary text such as "courtesy", "courtyard",
+# "probation", "settlement cycle" and "analysts probe the outlook".
 EVENT_PATTERNS: dict[str, tuple[str, ...]] = {
-    "earnings": ("earnings", "results", "10-q", "10-k"),
-    "m&a": ("merger", "acquisition", "acquire", "acquires", "buyout"),
-    "litigation": ("lawsuit", "litigation", "court", "settlement", "probe"),
-    "insider": ("form 4", "insider", "beneficial ownership"),
-    "guidance": ("guidance", "outlook", "forecast"),
+    "earnings": (
+        r"\bearnings\b",
+        r"\b(?:financial|quarterly|annual|full-year|fiscal)\s+results\b",
+        r"\b10-q\b",
+        r"\b10-k\b",
+    ),
+    "m&a": (
+        r"\bmerger\b",
+        r"\bacquisition\b",
+        r"\bacquire[sd]?\b",
+        r"\bbuyout\b",
+    ),
+    "litigation": (
+        r"\blawsuit\b",
+        r"\blitigation\b",
+        r"\bcourt\b",
+        r"\bclass action\b",
+        r"\bsettled\b",
+        r"\bsettlement (?:agreement|of)\b",
+        r"\b(?:regulatory|government|federal|antitrust|fraud|sec|criminal|doj)\s+probe\b",
+        r"\bprobe into\b",
+    ),
+    "insider": (r"\bform 4\b", r"\binsider\b", r"\bbeneficial ownership\b"),
+    "guidance": (
+        r"\bguidance\b",
+        r"\b(?:company|financial|full-year|fiscal(?:\s+year)?\s+\d{4})\s+outlook\b",
+        r"\b(?:raises?|lowers?|cuts?|reaffirms?|withdraws?)\s+(?:its\s+)?outlook\b",
+        r"\bforecast\b",
+    ),
+}
+
+_COMPILED_EVENTS: dict[str, tuple[re.Pattern[str], ...]] = {
+    flag: tuple(re.compile(pattern) for pattern in patterns)
+    for flag, patterns in EVENT_PATTERNS.items()
 }
 
 
@@ -51,6 +86,7 @@ class FundamentalReport:
     features: dict[str, float]
     provenance: dict[str, list[str]]
     missing: list[str]
+    skipped_period: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +95,7 @@ class FundamentalReport:
             "features": dict(sorted(self.features.items())),
             "provenance": {key: sorted(value) for key, value in sorted(self.provenance.items())},
             "missing": sorted(self.missing),
+            "skipped_period": sorted(self.skipped_period),
         }
 
 
@@ -77,9 +114,12 @@ def _parse_date(value: Any) -> Optional[date]:
 
 def _number(value: Any) -> Optional[float]:
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    # A corrupt feed must yield a missing feature, not a poisoned nan/inf that
+    # makes the report non-serialisable.
+    return number if math.isfinite(number) else None
 
 
 def _fact_period(observation: Observation) -> Optional[date]:
@@ -213,15 +253,21 @@ def compute_fundamental_features(
 
     if as_of.tzinfo is None or as_of.tzinfo.utcoffset(as_of) is None:
         raise ValueError("as_of must be timezone-aware")
-    observations = [
-        observation
-        for observation in store.query_observations_as_of(
-            entity_id, as_of, mode="published"
-        )
-        if observation.kind is ObservationKind.fundamental
-        and observation.published_at <= as_of
-        and (_fact_period(observation) or date.max) <= as_of.date()
-    ]
+    observations: list[Observation] = []
+    skipped_period: list[str] = []
+    for observation in store.query_observations_as_of(entity_id, as_of, mode="published"):
+        if observation.kind is not ObservationKind.fundamental:
+            continue
+        if observation.published_at > as_of:
+            continue
+        period = _fact_period(observation)
+        if period is None:
+            # A period-keyed feature cannot place this fact; surface the drop
+            # instead of letting the ``date.max`` fallback hide it.
+            skipped_period.append(observation.id)
+            continue
+        if period <= as_of.date():
+            observations.append(observation)
 
     features: dict[str, float] = {}
     provenance: dict[str, list[str]] = {}
@@ -237,7 +283,7 @@ def compute_fundamental_features(
     debt = _latest(observations, DEBT_CONCEPTS)
     eps = _latest(observations, EPS_CONCEPTS)
 
-    for name, observation in (
+    for name, feature_obs in (
         ("revenue", revenue),
         ("gross_profit", gross_profit),
         ("operating_income", operating_income),
@@ -249,7 +295,7 @@ def compute_fundamental_features(
         ("debt", debt),
         ("eps_diluted", eps),
     ):
-        _add(features, provenance, name, _value(observation), observation)
+        _add(features, provenance, name, _value(feature_obs), feature_obs)
 
     _ratio(features, provenance, "gross_margin", gross_profit, revenue)
     _ratio(features, provenance, "operating_margin", operating_income, revenue)
@@ -260,25 +306,30 @@ def compute_fundamental_features(
     _growth(features, provenance, "revenue_growth_yoy", observations, REVENUE_CONCEPTS)
     _growth(features, provenance, "net_income_growth_yoy", observations, NET_INCOME_CONCEPTS)
 
-    if price is not None and eps is not None:
-        eps_value = _value(eps)
-        if eps_value is not None and eps_value > 0:
-            _add(features, provenance, "pe_ratio", float(price) / eps_value, eps)
-    if equity is not None and eps is not None:
-        shares = _value(net_income)
-        if shares not in (None, 0.0) and _value(eps) not in (None, 0.0):
-            shares = (_value(net_income) or 0.0) / (_value(eps) or 1.0)
-            if shares > 0:
-                book_value = (_value(equity) or 0.0) / shares
-                _add(
-                    features,
-                    provenance,
-                    "book_value_per_share",
-                    book_value,
-                    equity,
-                    net_income,
-                    eps,
-                )
+    net_income_value = _value(net_income)
+    eps_value = _value(eps)
+    equity_value = _value(equity)
+    if price is not None and eps_value is not None and eps_value > 0:
+        # The price is caller-supplied and carries no observation id, so PE
+        # provenance lists EPS only; PE is therefore not reproducible from
+        # provenance alone (documented in docs/ANALYSIS.md).
+        _add(features, provenance, "pe_ratio", float(price) / eps_value, eps)
+    if (
+        net_income_value not in (None, 0.0)
+        and eps_value not in (None, 0.0)
+        and equity_value is not None
+    ):
+        shares = net_income_value / eps_value
+        if shares > 0:
+            _add(
+                features,
+                provenance,
+                "book_value_per_share",
+                equity_value / shares,
+                equity,
+                net_income,
+                eps,
+            )
 
     expected = (
         "revenue",
@@ -299,6 +350,7 @@ def compute_fundamental_features(
         features=dict(sorted(features.items())),
         provenance=provenance,
         missing=missing,
+        skipped_period=sorted(skipped_period),
     )
 
 
@@ -311,8 +363,8 @@ def detect_events(observations: Sequence[Observation]) -> dict[str, list[str]]:
             str(observation.value.get(key) or "")
             for key in ("title", "summary", "description", "form", "items")
         ).lower()
-        for flag, patterns in EVENT_PATTERNS.items():
-            if any(pattern in text for pattern in patterns):
+        for flag, patterns in _COMPILED_EVENTS.items():
+            if any(pattern.search(text) for pattern in patterns):
                 events.setdefault(flag, set()).add(observation.id)
     return {
         flag: sorted(ids)
