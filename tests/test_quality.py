@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from janus.data.quality import check_observations
 from janus.memory.models import Observation, ObservationKind
@@ -114,3 +114,48 @@ def test_quality_cli_json(tmp_path, monkeypatch) -> None:
     payload = json.loads(result.output)
     assert payload["checked"] == 1
     assert "non_positive_price" in {issue["code"] for issue in payload["errors"]}
+
+
+def test_quality_report_samples_the_newest_rows_and_reports_truncation() -> None:
+    from janus.mcp.service import JanusService
+    from janus.memory.store import JanusStore
+
+    start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    store = JanusStore(":memory:")
+    for index in range(600):
+        store.insert_observation(
+            _observation(
+                f"p{index}",
+                close=100.0 + index * 0.01,
+                published_at=start + timedelta(days=index),
+            )
+        )
+    as_of = start + timedelta(days=599)
+    service = JanusService(store)
+
+    sampled = service.quality_report("ACME", as_of)
+    assert sampled["truncated"] is True
+    assert sampled["checked"] == 500
+    assert sampled["window"]["to"] == as_of.isoformat()
+    assert sampled["window"]["from"] == (start + timedelta(days=100)).isoformat()
+    assert [issue["code"] for issue in sampled["warnings"]] == []
+
+    full = service.quality_report("ACME", as_of, limit=None)
+    assert full["truncated"] is False
+    assert full["checked"] == 600
+
+
+def test_quality_report_exposes_the_staleness_threshold() -> None:
+    from janus.mcp.service import JanusService
+    from janus.memory.store import JanusStore
+
+    start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    store = JanusStore(":memory:")
+    store.insert_observation(_observation("old", published_at=start))
+    service = JanusService(store)
+    as_of = start + timedelta(days=30)
+
+    strict = service.quality_report("ACME", as_of, max_age_days=7)
+    assert [issue["code"] for issue in strict["warnings"]] == ["stale_feed"]
+    relaxed = service.quality_report("ACME", as_of, max_age_days=60)
+    assert relaxed["warnings"] == []

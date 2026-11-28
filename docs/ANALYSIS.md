@@ -3,6 +3,29 @@
 The analysis layer is deterministic and point-in-time. Every feature is computed
 from data known at `as_of`, and every materialized vector carries a hash.
 
+## Indicator engine (v1)
+
+`core/janus/analysis/indicators.py` owns the deterministic primitives:
+
+| Indicator | Parameters | Warmup | NaN policy |
+| --- | --- | --- | --- |
+| SMA | window | window | leading NaN |
+| EMA | span | 1 | from first |
+| RSI | window | window | neutral 50 |
+| MACD | fast/slow/signal | slow | from first |
+| ATR | window | window | leading NaN |
+| Bollinger | window/num_std | window | leading NaN |
+| OBV | none | 1 | from first |
+| VWAP | window or cumulative | 1 | leading NaN |
+| ROC | window | window | leading NaN |
+| Relative strength | benchmark | 1 | leading NaN |
+
+`INDICATOR_SPECS` records each warmup/NaN contract. `indicator_version(name,
+**params)` hashes the resolved parameters, so changing a window or a smoothing
+constant produces a new identifier instead of silently reusing the old one.
+Indicators are causal: a future row cannot change a historical value, and a
+test computes each indicator on a prefix to prove it.
+
 ## Feature registry (v1)
 
 | Feature | Definition | Notes |
@@ -48,6 +71,27 @@ feature_store.history("AAPL", "rsi_14")
 - `StockDashboard`: close, feature dict, `features_hash`.
 
 These models are part of `CONTRACT_MODELS` and the exported JSON Schema.
+
+## Fundamentals and events
+
+`core/janus/analysis/fundamentals.py` turns as-filed SEC facts into revenue,
+margin, cash-flow, leverage, growth, EPS, PE, and book-value features. Only
+facts published at or before `as_of` participate; a later restatement is visible
+only to later views. A fact whose period end is after `as_of` is excluded, and a
+fact with no parseable period is listed in `skipped_period` instead of being
+dropped silently. Every feature carries the observation ids that produced it,
+and missing inputs are listed explicitly. PE provenance lists EPS only, because
+the price is caller-supplied and has no observation id; PE is therefore not
+reproducible from provenance alone. Non-finite values (`nan`, `inf`) are treated
+as missing so a corrupt feed cannot poison the JSON report.
+
+`detect_events` maps filing/news text to earnings, M&A, litigation, insider, and
+guidance flags with the supporting observation ids. Patterns match on word
+boundaries and ambiguous words require context: `results` needs a financial or
+quarterly qualifier, `probe` needs a legal/regulatory qualifier, `settlement`
+needs "agreement"/"of"/"settled", and `outlook` needs a company/guidance
+qualifier. "Courtesy", "courtyard", "probation", "settlement cycle" and
+"analysts probe the outlook" therefore produce no flag.
 
 ## Regime baseline
 
