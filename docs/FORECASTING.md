@@ -122,6 +122,14 @@ sentiment, and luck contributions and normalizes them to a share of 1.
 category. Two personas can therefore read the same evidence differently; the
 weights are stored with the `Persona` and are auditable.
 
+## Walk-forward evaluation
+
+`WalkForwardSplitter` creates rolling train/test windows with explicit purge and
+embargo gaps. `WalkForwardBacktester` re-fits the model per fold, reports Brier,
+log loss, accuracy, gross and net returns, and turnover. Costs are reported in
+basis points; no performance number is meaningful without them. Non-monotonic
+timestamps raise `LeakDetected`, and the same inputs produce the same report.
+
 ## Anti-lookahead rules
 
 1. Every query carries `as_of`.
