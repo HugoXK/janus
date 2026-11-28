@@ -140,6 +140,7 @@ No performance claims yet. The scaffold proves the invariants:
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
 | Retries, dead letters, replay, and contained store failures | `tests/test_scheduler.py` |
+| Forecast/review CLI workflows are scriptable and tested | `tests/test_cli_forecast_review.py` |
 | Counterfactual replay and persona tournaments are deterministic | `tests/test_counterfactual.py`, `tests/test_persona_tournament.py` |
 | Blobs are content-addressed and GC keeps referenced payloads | `tests/test_blob.py` |
 | Quantile/scenario tools are exposed through the MCP service | `tests/test_forecast_interface.py` |
