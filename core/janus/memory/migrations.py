@@ -299,6 +299,52 @@ MIGRATIONS: list[Migration] = [
         END;
         """,
     ),
+    Migration(
+        version=10,
+        name="mcp_scoped_auth",
+        sql="""
+        CREATE TABLE IF NOT EXISTS mcp_approval (
+            id            TEXT PRIMARY KEY,
+            caller_id     TEXT NOT NULL,
+            tool          TEXT NOT NULL,
+            argument_hash TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            expires_at    TEXT NOT NULL,
+            decision      TEXT NOT NULL DEFAULT 'pending',
+            decided_by    TEXT,
+            decided_at    TEXT,
+            executed_at   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_approval_lookup
+            ON mcp_approval(caller_id, tool, argument_hash, created_at);
+
+        CREATE TABLE IF NOT EXISTS mcp_audit (
+            seq           INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorded_at   TEXT NOT NULL,
+            caller_id     TEXT NOT NULL,
+            tool          TEXT NOT NULL,
+            decision      TEXT NOT NULL,
+            code          TEXT,
+            argument_hash TEXT,
+            approval_id   TEXT,
+            detail        TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_audit_recorded
+            ON mcp_audit(recorded_at, seq);
+
+        CREATE TRIGGER IF NOT EXISTS trg_mcp_audit_no_update
+        BEFORE UPDATE ON mcp_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'mcp_audit is append-only');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mcp_audit_no_delete
+        BEFORE DELETE ON mcp_audit
+        BEGIN
+            SELECT RAISE(ABORT, 'mcp_audit is append-only');
+        END;
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)
