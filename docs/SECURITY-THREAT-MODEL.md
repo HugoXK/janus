@@ -24,30 +24,37 @@ before it is merged, not against the branch that adds it.
 ## Surface: MCP tools and resources
 
 `core/janus/mcp/server.py` wraps `core/janus/mcp/service.py` in a `FastMCP`
-server (`server.py:11-23`) launched over stdio (`server.py:231-236`). Eleven
-tools are registered (`server.py:26-38`), ten of them touching the store; six
-resources are read-only (`docs/MCP.md:22-52`).
+server launched over stdio. Nineteen tools are registered (including two admin
+approval tools), seventeen of them touching the store; six resources are
+read-only. Since JAN-143 (#151) every registration declares a scope in
+`core/janus/mcp/auth.py` and enforcement lives in the service layer, so calling
+the service directly is denied as well.
 
 | Threat | Impact | Mitigation | Status | Residual risk |
 | --- | --- | --- | --- | --- |
-| Any local process can call every MCP tool: the server has no authentication or authorization | Full read/write of the local store through the tool boundary; an actor can record theses and forecasts as the user | None beyond the OS user and process boundary; the server is stdio `FastMCP` with no token check (the JAN-040 auth task is pending) | not implemented | Any process running as the same OS user can invoke write tools |
+| Any local process can call every MCP tool: the server has no authentication or authorization | Full read/write of the local store through the tool boundary; an actor can record theses and forecasts as the user | Per-caller tokens from `JANUS_MCP_TOKENS` with explicit `read`/`write`/`admin` scopes; a missing registry, missing token, unknown token, or expired token is denied (`core/janus/mcp/auth.py`; `docs/MCP.md`) | partial | Tokens are local environment data: a process that can set the server environment chooses its own token, and there is no transport encryption, OAuth/OIDC, or multi-tenant identity |
 | Arbitrary file read through `janus_beliefbench_run`'s `scenarios_path` argument | Read any file the process can open | The resolved path must equal, or sit below, the configured `scenarios_root` (`service.py:172-176`) | implemented | The root defaults to the working directory, so any file below it is loadable; there is no size or schema limit on the scenario file |
-| Write tools (`janus_thesis_create`, `janus_forecast_create`, `janus_forecast_settle`, `janus_review_debrief`) mutate the store without authorization | Forged or deleted research history | The tool surface is explicit and resources are read-only (`docs/MCP.md:44-52`); there is no per-caller authorization | partial | Same OS-user boundary as above; no audit log of tool calls |
-| Ledger tampering: a recorded forecast is meant to be immutable | Ex-post rewriting of predictions would destroy calibration evidence | The API has no update or delete path for a prediction; settlement only attaches an outcome (`core/janus/forecast/ledger.py:11-17`, `core/janus/memory/store.py:360-366`) | partial | No database trigger, hash chain, or signature; direct SQLite edits by the same user are undetectable |
-| Resource disclosure: `janus://theses`, `janus://forecasts`, `janus://calibration` return full store contents | Leak of hypotheses and forecasts to any caller | Resources are read-only and reuse the same read paths (`server.py:186-229`) | partial | No scoping or redaction per caller |
+| Write tools (`janus_thesis_create`, `janus_forecast_create`, `janus_forecast_settle`, `janus_review_debrief`) mutate the store without authorization | Forged or deleted research history | Writes are disabled unless `JANUS_MCP_WRITE_APPROVALS=1`; a write needs the `write` scope and an approval bound to caller, tool, canonical argument hash, and expiry; execution is exactly-once and an `admin`-scoped caller must decide (`core/janus/mcp/auth.py`, `core/janus/mcp/service.py`) | implemented | A caller holding both `write` and `admin` can self-approve; the least-privilege example keeps the admin token out of the agent process. Approvals and audit live in the same SQLite file, so direct SQLite edits are outside the control |
+| Ledger tampering: a recorded forecast is meant to be immutable | Ex-post rewriting of predictions would destroy calibration evidence | The API has no update or delete path for a prediction; settlement only attaches an outcome (`core/janus/forecast/ledger.py:11-17`, `core/janus/memory/store.py:360-366`). Every prediction and outcome is appended to a SHA-256 audit chain with append-only triggers (`core/janus/memory/audit.py`, migration 9); `janus audit verify` recomputes the chain and compares live rows with the audited payloads (`docs/AUDIT-CHAIN.md`) | implemented | No signature: the same OS user can drop the triggers and rewrite the whole chain; an exported checkpoint detects it only if it lives outside that process. Rows written outside the ledger API and pre-migration rows are not chained; `--require-complete` is an opt-in scan |
+| Resource disclosure: `janus://theses`, `janus://forecasts`, `janus://calibration` return full store contents | Leak of hypotheses and forecasts to any caller | Resources require an explicit scope, and a denied read is audited; the resource handlers reuse the scoped service methods (`server.py`, `service.py`) | partial | A `read` caller still gets full contents; there is no per-resource redaction or field-level filtering |
 | Denial of service / resource exhaustion: list tools and `janus_as_of_query` have optional or no limits, and a scenario file is loaded whole | Local process memory or CPU exhaustion | None; the design is single-user and local | not implemented | A malformed or huge input can stall the host process |
 | Untrusted tool output is fed to a reasoning model: observation text, theses and review notes are attacker-influenced data | Prompt injection against the assisting model | Software computes indicators, features, calibration and settlement deterministically; the model only reasons over returned data (`CONTRIBUTING.md`, "Principles" section; `docs/FORECASTING.md`, "LLM role" section) | partial | There is no output provenance marker or sanitization at the MCP boundary |
 | Error messages can include absolute local paths | Minor information disclosure in logs or chat | None systematic | not implemented | Paths appear in `ValueError` and `KeyError` text returned to the caller |
+| Repudiation: a denied or executed tool call cannot be attributed after the fact | No evidence of who attempted a write or who approved it | Denials, decisions, and executions append to `mcp_audit` with caller, tool, argument hash, and approval id; SQLite triggers reject `UPDATE`/`DELETE` (`core/janus/mcp/auth.py`) | partial | The audit table is not hash-chained or signed (JAN-148 covers tamper evidence); the same OS user can read or copy it |
 
 **Open risks — MCP tools**
 
-- MCP authentication and authorization are unshipped. Do not describe the MCP
-  surface as authenticated until JAN-040's auth task lands and is tested.
-- The ledger's immutability is an API property, not a storage guarantee. A
-  tamper-evident ledger needs a hash chain or signature and is not in scope
-  here.
-- There is no tool-call audit log, so post-hoc attribution of a write is
-  impossible.
+- MCP authentication and authorization now exist for the local stdio transport
+  (per-caller tokens, scopes, approvals, audit). They are not a hosted identity
+  system: there is no OAuth/OIDC, no transport encryption, and no multi-tenant
+  isolation. A caller holding both `write` and `admin` can self-approve.
+- The ledger now has hash-chain evidence (`docs/AUDIT-CHAIN.md`), but it is
+  not a signature: a same-user actor can drop the append-only triggers and
+  rewrite the whole chain. Export checkpoints to a separate location when
+  truncation or a rewrite must be detectable.
+- The MCP audit trail is append-only at the database level but not hash-chained
+  or signed, so deletion of the whole file or direct file edits remain outside
+  the control.
 
 ## Surface: local data at rest
 
@@ -76,9 +83,10 @@ the same OS user cannot be told apart from a locally fitted one
 
 **Open risks — local data at rest**
 
-- There is no encryption at rest and no integrity check on the store. A
-  resolved Python inventory and any tamper evidence both require a lockfile or
-  a signature, which is a separate decision.
+- There is no encryption at rest. Tamper evidence covers predictions, outcomes,
+  shares and overrides through the audit chain (`docs/AUDIT-CHAIN.md`);
+  observations, theses and reviews are not chained. This is detection, not
+  prevention, and it is not a signature.
 - Cache and blob files are raw provider payloads; their retention and deletion
   policy is manual.
 - The threat model does not cover the operating system, disk encryption, or
