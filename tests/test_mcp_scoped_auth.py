@@ -386,3 +386,38 @@ def test_canonical_argument_hash_is_stable_and_order_independent() -> None:
     assert left == right
     assert left != changed
     assert left != other_tool
+
+
+def test_entity_reads_require_read_scope_and_are_audited() -> None:
+    store = JanusStore(":memory:")
+    blind = JanusService(
+        store,
+        authorizer=Authorizer(
+            store,
+            tokens=_registry({"id": "blind", "token": "blind-token", "scopes": ["write"]}),
+            caller_token="blind-token",
+            write_approvals_enabled=True,
+            clock=Clock(),
+        ),
+    )
+    _expect("scope_denied", blind.resolve_entity, "ACME")
+    _expect("scope_denied", blind.get_entity, "ent-1")
+    _expect("scope_denied", blind.list_entities)
+
+    rows = AuditLedger(store).query()
+    assert [row["tool"] for row in rows] == [
+        "janus_entity_resolve",
+        "janus_entity_show",
+        "janus_entity_list",
+    ]
+    assert {row["decision"] for row in rows} == {"denied"}
+
+    reader_store = JanusStore(":memory:")
+    reader = JanusService(
+        reader_store, authorizer=_authorizer(reader_store, "reader-token")
+    )
+    assert reader.list_entities() == []
+    with pytest.raises(KeyError):
+        reader.resolve_entity("missing")
+    with pytest.raises(KeyError):
+        reader.get_entity("missing")
