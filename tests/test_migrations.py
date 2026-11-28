@@ -32,6 +32,7 @@ def test_fresh_store_has_the_current_schema() -> None:
     assert "universe_membership" in _tables(store._conn)
     assert "corporate_action" in _tables(store._conn)
     assert "source_span" in _tables(store._conn)
+    assert "audit_entry" in _tables(store._conn)
     assert "mcp_approval" in _tables(store._conn)
     assert "mcp_audit" in _tables(store._conn)
     assert "snapshot_id" in _columns(store._conn, "observation")
@@ -39,14 +40,14 @@ def test_fresh_store_has_the_current_schema() -> None:
 
 def test_migrations_are_idempotent() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert apply_migrations(connection) == []
     assert current_version(connection) == LATEST_VERSION
 
 
 def test_dry_run_does_not_write() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert current_version(connection) == 0
     assert "observation" not in _tables(connection)
     assert "schema_migrations" not in _tables(connection)
@@ -67,5 +68,6 @@ def test_applied_versions_are_recorded() -> None:
         (6, "security_master"),
         (7, "corporate_actions"),
         (8, "source_spans"),
-        (9, "mcp_scoped_auth"),
+        (9, "audit_chain"),
+        (10, "mcp_scoped_auth"),
     ]

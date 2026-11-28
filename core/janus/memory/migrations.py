@@ -274,6 +274,33 @@ MIGRATIONS: list[Migration] = [
     ),
     Migration(
         version=9,
+        name="audit_chain",
+        sql="""
+        CREATE TABLE IF NOT EXISTS audit_entry (
+            seq          INTEGER PRIMARY KEY,
+            kind         TEXT NOT NULL,
+            ref_id       TEXT NOT NULL,
+            recorded_at  TEXT NOT NULL,
+            payload      TEXT NOT NULL,
+            prev_hash    TEXT NOT NULL,
+            entry_hash   TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_entry_kind
+            ON audit_entry(kind, seq);
+        CREATE TRIGGER IF NOT EXISTS audit_entry_no_update
+        BEFORE UPDATE ON audit_entry
+        BEGIN
+            SELECT RAISE(ABORT, 'audit_entry is append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS audit_entry_no_delete
+        BEFORE DELETE ON audit_entry
+        BEGIN
+            SELECT RAISE(ABORT, 'audit_entry is append-only');
+        END;
+        """,
+    ),
+    Migration(
+        version=10,
         name="mcp_scoped_auth",
         sql="""
         CREATE TABLE IF NOT EXISTS mcp_approval (
