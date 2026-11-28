@@ -33,7 +33,7 @@ resources are read-only (`docs/MCP.md:22-52`).
 | Any local process can call every MCP tool: the server has no authentication or authorization | Full read/write of the local store through the tool boundary; an actor can record theses and forecasts as the user | None beyond the OS user and process boundary; the server is stdio `FastMCP` with no token check (the JAN-040 auth task is pending) | not implemented | Any process running as the same OS user can invoke write tools |
 | Arbitrary file read through `janus_beliefbench_run`'s `scenarios_path` argument | Read any file the process can open | The resolved path must equal, or sit below, the configured `scenarios_root` (`service.py:172-176`) | implemented | The root defaults to the working directory, so any file below it is loadable; there is no size or schema limit on the scenario file |
 | Write tools (`janus_thesis_create`, `janus_forecast_create`, `janus_forecast_settle`, `janus_review_debrief`) mutate the store without authorization | Forged or deleted research history | The tool surface is explicit and resources are read-only (`docs/MCP.md:44-52`); there is no per-caller authorization | partial | Same OS-user boundary as above; no audit log of tool calls |
-| Ledger tampering: a recorded forecast is meant to be immutable | Ex-post rewriting of predictions would destroy calibration evidence | The API has no update or delete path for a prediction; settlement only attaches an outcome (`core/janus/forecast/ledger.py:11-17`, `core/janus/memory/store.py:360-366`) | partial | No database trigger, hash chain, or signature; direct SQLite edits by the same user are undetectable |
+| Ledger tampering: a recorded forecast is meant to be immutable | Ex-post rewriting of predictions would destroy calibration evidence | The API has no update or delete path for a prediction; settlement only attaches an outcome (`core/janus/forecast/ledger.py:11-17`, `core/janus/memory/store.py:360-366`). Every prediction and outcome is appended to a SHA-256 audit chain with append-only triggers (`core/janus/memory/audit.py`, migration 9); `janus audit verify` recomputes the chain and compares live rows with the audited payloads (`docs/AUDIT-CHAIN.md`) | implemented | No signature: the same OS user can drop the triggers and rewrite the whole chain; an exported checkpoint detects it only if it lives outside that process. Rows written outside the ledger API and pre-migration rows are not chained; `--require-complete` is an opt-in scan |
 | Resource disclosure: `janus://theses`, `janus://forecasts`, `janus://calibration` return full store contents | Leak of hypotheses and forecasts to any caller | Resources are read-only and reuse the same read paths (`server.py:186-229`) | partial | No scoping or redaction per caller |
 | Denial of service / resource exhaustion: list tools and `janus_as_of_query` have optional or no limits, and a scenario file is loaded whole | Local process memory or CPU exhaustion | None; the design is single-user and local | not implemented | A malformed or huge input can stall the host process |
 | Untrusted tool output is fed to a reasoning model: observation text, theses and review notes are attacker-influenced data | Prompt injection against the assisting model | Software computes indicators, features, calibration and settlement deterministically; the model only reasons over returned data (`CONTRIBUTING.md`, "Principles" section; `docs/FORECASTING.md`, "LLM role" section) | partial | There is no output provenance marker or sanitization at the MCP boundary |
@@ -43,9 +43,10 @@ resources are read-only (`docs/MCP.md:22-52`).
 
 - MCP authentication and authorization are unshipped. Do not describe the MCP
   surface as authenticated until JAN-040's auth task lands and is tested.
-- The ledger's immutability is an API property, not a storage guarantee. A
-  tamper-evident ledger needs a hash chain or signature and is not in scope
-  here.
+- The ledger now has hash-chain evidence (`docs/AUDIT-CHAIN.md`), but it is
+  not a signature: a same-user actor can drop the append-only triggers and
+  rewrite the whole chain. Export checkpoints to a separate location when
+  truncation or a rewrite must be detectable.
 - There is no tool-call audit log, so post-hoc attribution of a write is
   impossible.
 
@@ -77,11 +78,11 @@ the same OS user cannot be told apart from a locally fitted one
 
 **Open risks — local data at rest**
 
-- The listed free-text fields and blob contents are sealed (ADR 0005), but
-  observation values, features, reviews and model artifacts are still plaintext,
-  and the store has no integrity check. A resolved Python inventory and any
-  tamper evidence both require a lockfile or a signature, which is a separate
-  decision.
+- The listed free-text fields and blob contents are sealed (ADR 0005), and the
+  audit chain gives tamper evidence for predictions, outcomes, shares and
+  overrides (`docs/AUDIT-CHAIN.md`); observation values, features, reviews and
+  model artifacts are still plaintext, and the chain is detection, not a
+  signature.
 - Cache files remain raw provider payloads; blob retention and deletion policy
   is manual. `janus keys status` reports unsealed blobs but does not delete
   them.

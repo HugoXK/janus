@@ -403,7 +403,9 @@ class JanusStore:
     # ------------------------------------------------------------------
     # Predictions and outcomes
     # ------------------------------------------------------------------
-    def insert_prediction(self, prediction: Prediction) -> None:
+    def insert_prediction(
+        self, prediction: Prediction, *, commit: bool = True
+    ) -> None:
         key_id = self._sealer.active_key_id if self._sealer is not None else None
         self._conn.execute(
             """
@@ -427,7 +429,8 @@ class JanusStore:
                 key_id,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_prediction(self, prediction_id: str) -> Optional[Prediction]:
         row = self._conn.execute(
@@ -452,15 +455,20 @@ class JanusStore:
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_prediction(row) for row in rows]
 
-    def attach_outcome(self, prediction_id: str, outcome_id: str) -> None:
+    def attach_outcome(
+        self, prediction_id: str, outcome_id: str, *, commit: bool = True
+    ) -> None:
         """Attach an outcome. This is the only mutation allowed on a prediction."""
 
         self._conn.execute(
             "UPDATE prediction SET outcome_id = ? WHERE id = ?", (outcome_id, prediction_id)
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def insert_outcome(self, outcome: Outcome) -> None:
+    def insert_outcome(
+        self, outcome: Outcome, *, commit: bool = True
+    ) -> None:
         key_id = self._sealer.active_key_id if self._sealer is not None else None
         self._conn.execute(
             """
@@ -483,7 +491,8 @@ class JanusStore:
                 key_id,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_outcome(self, outcome_id: str) -> Optional[Outcome]:
         row = self._conn.execute("SELECT * FROM outcome WHERE id = ?", (outcome_id,)).fetchone()
