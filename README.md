@@ -140,6 +140,8 @@ No performance claims yet. The scaffold proves the invariants:
 | BeliefBench runner and baselines | `tests/test_beliefbench.py` |
 | GDELT and RSS map to observations | `tests/test_gdelt.py`, `tests/test_rss.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Quantile/scenario tools are exposed through the MCP service | `tests/test_forecast_interface.py` |
+| Quantiles, scenarios, and walk-forward costs/leaks are tested | `tests/test_quantiles.py`, `tests/test_scenarios.py`, `tests/test_backtest.py` |
 | Brief/snapshot CLI commands are scriptable | `tests/test_cli_brief_snapshot.py` |
 | Local API exposes request metrics and X-Request-ID | `tests/test_server.py` |
 | Local JSON API publishes an OpenAPI contract | `tests/test_server.py` |
