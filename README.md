@@ -54,6 +54,7 @@ local-first, point-in-time, and built to be audited.
 - [Roadmap](#roadmap)
 - [Evaluation](#evaluation)
 - [Security and privacy](#security-and-privacy)
+- [Releases](#releases)
 - [FAQ](#faq)
 - [Contributing](#contributing)
 - [License](#license)
@@ -154,6 +155,8 @@ No performance claims yet. The scaffold proves the invariants:
 | Fundamentals are as-filed, provenance-linked, and event flags cite ids | `tests/test_fundamentals.py` |
 | Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
 | Retention deletes only expired rows; redaction is deep and non-mutating | `tests/test_retention.py` |
+| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Store integrity, backup, stats, and vacuum are tested | `tests/test_maintenance.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
 | Quality checks catch duplicate/future/stale data and are exposed via CLI + MCP | `tests/test_quality.py` |
@@ -452,6 +455,22 @@ Point-in-time correctness and calibration. The LLM is not the hard part.
 
 **Is it production-ready?**
 No. It is a `v0.1.0` scaffold. Use it to explore, not to manage money.
+
+## Releases
+
+Version strings are checked across `pyproject.toml`, `core/janus/__init__.py`,
+`dsh-plugin/package.json`, and `package-lock.json`.
+
+```bash
+python3 scripts/release.py --root .          # check
+python3 scripts/release.py --bump 0.2.0      # dry-run
+python3 scripts/release.py --bump 0.2.0 --write --message "..."  # apply
+make release                                  # check + wheel/sdist + DSH tarball
+make release-image                            # local Docker image
+```
+
+The tag workflow rebuilds the Python distributions, the DSH plugin tarball, and
+the container image, then uploads artifacts to the GitHub release.
 
 ## Contributing
 

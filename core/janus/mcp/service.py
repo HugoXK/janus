@@ -483,6 +483,7 @@ class JanusService:
         trend: float = 0.0,
         evidence: Optional[list[str]] = None,
     ) -> dict[str, Any]:
+        self.require_read("janus_scenario_tree")
         from ..forecast.scenarios import generate_scenario_tree
 
         tree = generate_scenario_tree(
@@ -499,6 +500,7 @@ class JanusService:
     def quantile_forecast(
         self, returns: list[float], *, horizon: int = 1
     ) -> dict[str, Any]:
+        self.require_read("janus_quantile_forecast")
         from ..forecast.quantiles import EmpiricalQuantileModel
 
         forecast = EmpiricalQuantileModel().fit(returns).predict(horizon=horizon)
