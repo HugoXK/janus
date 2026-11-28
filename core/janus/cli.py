@@ -15,6 +15,7 @@ from .config import load_settings
 from .contracts import SCHEMA_VERSION, check_schema, write_schema
 from .data.blob import LocalBlobStore
 from .demo import run_demo
+from .logging import configure_logging
 from .forecast.registry import (
     ArtifactCorruptError,
     ArtifactNotFoundError,
@@ -48,6 +49,7 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+share_app = typer.Typer(help="Approval-first, signed sharing.")
 forecast_app = typer.Typer(help="Create, list, and settle forecasts.")
 review_app = typer.Typer(help="Debrief and calibration review.")
 blob_app = typer.Typer(help="Inspect and garbage-collect content-addressed blobs.")
@@ -63,6 +65,7 @@ db_app = typer.Typer(help="Check, back up, and maintain the SQLite store.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(share_app, name="share")
 app.add_typer(forecast_app, name="forecast")
 app.add_typer(review_app, name="review")
 app.add_typer(blob_app, name="blob")
@@ -76,6 +79,23 @@ app.add_typer(mcp_app, name="mcp")
 app.add_typer(entity_app, name="entity")
 app.add_typer(audit_app, name="audit")
 app.add_typer(db_app, name="db")
+
+
+@app.callback()
+def _configure_cli(
+    log_format: str = typer.Option(
+        "text", "--log-format", help="Log format: text or json"
+    ),
+    log_level: str = typer.Option(
+        "INFO", "--log-level", help="DEBUG, INFO, WARNING, ERROR, CRITICAL"
+    ),
+) -> None:
+    """Configure structured logging for every command."""
+
+    try:
+        configure_logging(log_level, log_format)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command()
@@ -708,6 +728,158 @@ def audit_export(
     typer.echo(f"exported {checkpoint.count} entries to {out}")
 
 
+def _share_signer(key_id: str):
+    from .share.signing import ShareSigner
+
+    secret = os.environ.get("JANUS_SHARE_SECRET")
+    if not secret:
+        raise typer.BadParameter("set JANUS_SHARE_SECRET to sign or verify shares")
+    return ShareSigner(secret, key_id=key_id)
+
+
+def _share_service(db: Optional[str], key_id: str):
+    from .share.service import ShareService
+
+    settings = load_settings()
+    return ShareService(JanusStore(db or settings.database), _share_signer(key_id))
+
+
+@share_app.command("request")
+def share_request(
+    kind: str = typer.Option(..., "--kind", help="thesis, forecast, brief, ..."),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    snapshot_hash: str = typer.Option(..., "--snapshot-hash", help="As-of snapshot hash"),
+    payload: Optional[str] = typer.Option(None, "--payload", help="JSON payload"),
+    payload_file: Optional[Path] = typer.Option(None, "--payload-file", help="JSON file"),
+    requested_by: str = typer.Option("local", "--requested-by", help="Requester"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Create a pending share request and print its approval card."""
+
+    from .share.service import ShareService
+
+    if (payload is None) == (payload_file is None):
+        raise typer.BadParameter("provide exactly one of --payload or --payload-file")
+    try:
+        if payload is not None:
+            body = json.loads(payload)
+        else:
+            if payload_file is None:  # explicit narrowing; assert is stripped under -O
+                raise typer.BadParameter("provide exactly one of --payload or --payload-file")
+            body = json.loads(payload_file.read_text())
+    except (json.JSONDecodeError, TypeError, OSError) as exc:
+        raise typer.BadParameter("payload must be valid JSON") from exc
+    settings = load_settings()
+    service = ShareService(JanusStore(db or settings.database))
+    try:
+        request = service.request(
+            kind=kind,
+            payload=body,
+            as_of=as_of,
+            snapshot_hash=snapshot_hash,
+            requested_by=requested_by,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    card = request.card().to_dict()
+    if as_json:
+        typer.echo(json.dumps(card, indent=2, sort_keys=True))
+        return
+    typer.echo(f"request: {card['request_id']} ({card['status']})")
+    typer.echo(f"{card['title']} as_of={card['as_of']} snapshot={card['snapshot_hash']}")
+    typer.echo(f"payload_hash: {card['payload_hash']}")
+    for warning in card["warnings"]:
+        typer.echo(f"! {warning}")
+    typer.echo(f"approve with: janus share approve {card['request_id']} --approver <name>")
+
+
+@share_app.command("approve")
+def share_approve(
+    request_id: str = typer.Argument(..., help="Share request id"),
+    approver: str = typer.Option("local", "--approver", help="Approver identity"),
+    key_id: str = typer.Option("local", "--key-id", help="Bot-social key id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Approve and sign a pending share request."""
+
+    service = _share_service(db, key_id)
+    try:
+        request = service.approve(request_id, approver=approver)
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    envelope = request.envelope or {}
+    if as_json:
+        typer.echo(json.dumps(envelope, indent=2, sort_keys=True))
+        return
+    typer.echo(f"approved {request.id} by {request.approved_by}")
+    typer.echo(f"signature: {envelope.get('signature')}")
+
+
+@share_app.command("reject")
+def share_reject(
+    request_id: str = typer.Argument(..., help="Share request id"),
+    approver: str = typer.Option("local", "--approver", help="Approver identity"),
+    reason: str = typer.Option("", "--reason", help="Rejection reason"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Reject a pending share request without signing."""
+
+    from .share.service import ShareService
+
+    settings = load_settings()
+    service = ShareService(JanusStore(db or settings.database))
+    try:
+        request = service.reject(request_id, approver=approver, reason=reason)
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"rejected {request.id} by {request.approved_by}")
+
+
+@share_app.command("list")
+def share_list(
+    status: Optional[str] = typer.Option(None, "--status", help="pending, approved, rejected"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List share requests."""
+
+    from .share.service import ShareService
+
+    settings = load_settings()
+    service = ShareService(JanusStore(db or settings.database))
+    requests = [request.to_dict() for request in service.list(status)]
+    if as_json:
+        typer.echo(json.dumps(requests, indent=2, sort_keys=True, default=str))
+        return
+    if not requests:
+        typer.echo("no share requests")
+        return
+    for request in requests:
+        typer.echo(
+            f"{request['id']} {request['status']} {request['kind']} "
+            f"as_of={request['as_of']} by={request['requested_by']}"
+        )
+
+
+@share_app.command("verify")
+def share_verify(
+    envelope_file: Path = typer.Argument(..., help="Signed share envelope JSON"),
+    request_id: str = typer.Option(..., "--request-id", help="Request id the envelope must bind"),
+    key_id: str = typer.Option("local", "--key-id", help="Bot-social key id"),
+) -> None:
+    """Verify a signed share envelope against the request it claims to approve."""
+
+    try:
+        envelope = json.loads(envelope_file.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        raise typer.BadParameter("envelope must be valid JSON") from exc
+    if _share_signer(key_id).verify(envelope, request_id=request_id):
+        typer.echo("valid signature")
+        return
+    typer.echo("invalid signature")
+    raise typer.Exit(code=1)
 @entity_app.command("resolve")
 def entity_resolve(
     alias: str = typer.Argument(..., help="Ticker, CIK, or name alias"),
