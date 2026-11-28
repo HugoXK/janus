@@ -50,13 +50,22 @@ class PredictionLedger:
             features_hash=features_hash,
             as_of=as_of,
         )
-        self.store.insert_prediction(prediction)
-        self.audit.append(
-            "prediction",
-            prediction.id,
-            prediction_payload(prediction),
-            recorded_at=prediction.created_at,
-        )
+        # One transaction: a failed audit append must not leave a durable,
+        # never-chained prediction behind.
+        with self.store.locked():
+            try:
+                self.store.insert_prediction(prediction, commit=False)
+                self.audit.append(
+                    "prediction",
+                    prediction.id,
+                    prediction_payload(prediction),
+                    recorded_at=prediction.created_at,
+                    commit=False,
+                )
+                self.store.connection.commit()
+            except BaseException:
+                self.store.connection.rollback()
+                raise
         return prediction
 
     def settle(
@@ -82,9 +91,17 @@ class PredictionLedger:
             source=source,
             score=score,
         )
-        self.store.insert_outcome(outcome)
-        self.store.attach_outcome(prediction_id, outcome.id)
-        self.audit.append("outcome", outcome.id, outcome_payload(outcome))
+        with self.store.locked():
+            try:
+                self.store.insert_outcome(outcome, commit=False)
+                self.store.attach_outcome(prediction_id, outcome.id, commit=False)
+                self.audit.append(
+                    "outcome", outcome.id, outcome_payload(outcome), commit=False
+                )
+                self.store.connection.commit()
+            except BaseException:
+                self.store.connection.rollback()
+                raise
         return outcome
 
     def open_predictions(self) -> list[Prediction]:

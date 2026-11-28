@@ -23,7 +23,6 @@ from typing import Any, Mapping, Optional, Union
 from .models import Outcome, Prediction, utcnow
 from .store import JanusStore
 
-CANONICAL_SEPARATOR = "\x1f"
 AUDIT_KINDS = ("prediction", "outcome", "share", "override")
 
 
@@ -68,6 +67,15 @@ class SourceMissingError(AuditError):
         self.kind = kind
         self.ref_id = ref_id
         super().__init__(f"audited {kind} {ref_id} is missing")
+
+
+class UnchainedRowError(AuditError):
+    """A source row exists that the chain never recorded (opt-in completeness scan)."""
+
+    def __init__(self, kind: str, ref_id: str) -> None:
+        self.kind = kind
+        self.ref_id = ref_id
+        super().__init__(f"{kind} {ref_id} has no audit entry")
 
 
 class CheckpointMismatchError(AuditError):
@@ -164,6 +172,7 @@ class AuditChain:
         payload: Mapping[str, Any],
         *,
         recorded_at: Optional[datetime] = None,
+        commit: bool = True,
     ) -> AuditEntry:
         if kind not in AUDIT_KINDS:
             raise ValueError(f"unsupported audit kind: {kind}")
@@ -185,7 +194,8 @@ class AuditChain:
                 """,
                 (seq, kind, ref_id, stamp, body, prev_hash, entry_hash),
             )
-            self.store.connection.commit()
+            if commit:
+                self.store.connection.commit()
 
         return AuditEntry(
             seq=seq,
@@ -225,14 +235,27 @@ class AuditChain:
     def entries(
         self, *, as_of: Optional[datetime] = None
     ) -> list[AuditEntry]:
-        sql = "SELECT * FROM audit_entry"
-        params: list[object] = []
-        if as_of is not None:
-            sql += " WHERE recorded_at <= ?"
-            params.append(_recorded_at_text(as_of))
-        sql += " ORDER BY seq ASC"
-        rows = self.store.connection.execute(sql, params).fetchall()
-        return [self._row_to_entry(row) for row in rows]
+        """Entries in chain order, optionally cut to a contiguous as-of prefix.
+
+        ``as_of`` stops at the first entry recorded after the cutoff, so the
+        result is always a prefix a checkpoint can commit to. A backdated entry
+        appended later cannot pull itself into an earlier prefix and cannot
+        leave a gap in the exported sequence.
+        """
+
+        rows = self.store.connection.execute(
+            "SELECT * FROM audit_entry ORDER BY seq ASC"
+        ).fetchall()
+        entries = [self._row_to_entry(row) for row in rows]
+        if as_of is None:
+            return entries
+        limit = as_of.astimezone(timezone.utc)
+        prefix: list[AuditEntry] = []
+        for entry in entries:
+            if entry.recorded_at > limit:
+                break
+            prefix.append(entry)
+        return prefix
 
     def checkpoint(self, *, as_of: Optional[datetime] = None) -> AuditCheckpoint:
         entries = self.entries(as_of=as_of)
@@ -250,7 +273,12 @@ class AuditChain:
     # ------------------------------------------------------------------
     # Verify
     # ------------------------------------------------------------------
-    def verify(self, *, checkpoint: Optional[AuditCheckpoint] = None) -> AuditReport:
+    def verify(
+        self,
+        *,
+        checkpoint: Optional[AuditCheckpoint] = None,
+        require_complete: bool = False,
+    ) -> AuditReport:
         with self.store.locked():
             entries = self.entries()
             expected_seq = 1
@@ -274,6 +302,9 @@ class AuditChain:
                 prev_hash = entry.entry_hash
                 expected_seq += 1
 
+            if require_complete:
+                self._check_completeness(entries)
+
         if checkpoint is not None:
             self._check_checkpoint(entries, checkpoint)
 
@@ -283,6 +314,23 @@ class AuditChain:
             head_seq=head.seq if head is not None else 0,
             head_hash=head.entry_hash if head is not None else self.GENESIS,
         )
+
+    def _check_completeness(self, entries: list[AuditEntry]) -> None:
+        """Fail when a prediction or outcome has no chained row.
+
+        Opt-in because pre-migration rows and rows written around the ledger
+        API are legitimately outside the chain on older stores.
+        """
+
+        audited = {(entry.kind, entry.ref_id) for entry in entries}
+        for kind in ("prediction", "outcome"):
+            rows = self.store.connection.execute(
+                f"SELECT id FROM {kind}"
+            ).fetchall()
+            for row in rows:
+                ref_id = str(row["id"])
+                if (kind, ref_id) not in audited:
+                    raise UnchainedRowError(kind, ref_id)
 
     def _check_source(self, entry: AuditEntry) -> None:
         if entry.kind == "prediction":
@@ -361,31 +409,45 @@ class AuditChain:
     def verify_export(cls, path: Union[str, Path]) -> AuditReport:
         """Verify an exported chain file without a live store."""
 
-        data = json.loads(Path(path).read_text())
+        try:
+            data = json.loads(Path(path).read_text())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AuditError(f"invalid audit export: {exc}") from exc
+        if not isinstance(data, dict):
+            raise AuditError("invalid audit export: top level is not an object")
         if data.get("version") != cls.AUDIT_VERSION:
             raise AuditError(f"unsupported audit export version: {data.get('version')}")
         entries = data.get("entries") or []
         prev_hash = cls.GENESIS
         expected_seq = 1
-        for entry in entries:
-            if entry["seq"] != expected_seq:
-                raise ChainGapError(expected_seq, entry["seq"])
-            recomputed = cls._hash(
-                entry["seq"],
-                entry["kind"],
-                entry["ref_id"],
-                entry["recorded_at"],
-                canonical_json(entry["payload"]),
-                entry["prev_hash"],
-            )
-            if recomputed != entry["entry_hash"]:
-                raise EntryHashError(entry["seq"])
-            if entry["prev_hash"] != prev_hash:
-                raise EntryHashError(entry["seq"], "previous hash does not link")
-            prev_hash = entry["entry_hash"]
-            expected_seq += 1
+        try:
+            for entry in entries:
+                if entry["seq"] != expected_seq:
+                    raise ChainGapError(expected_seq, entry["seq"])
+                recomputed = cls._hash(
+                    entry["seq"],
+                    entry["kind"],
+                    entry["ref_id"],
+                    entry["recorded_at"],
+                    canonical_json(entry["payload"]),
+                    entry["prev_hash"],
+                )
+                if recomputed != entry["entry_hash"]:
+                    raise EntryHashError(entry["seq"])
+                if entry["prev_hash"] != prev_hash:
+                    raise EntryHashError(entry["seq"], "previous hash does not link")
+                prev_hash = entry["entry_hash"]
+                expected_seq += 1
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AuditError(f"malformed audit export: {exc}") from exc
 
-        stored = data.get("checkpoint") or {}
+        stored = data.get("checkpoint")
+        if not isinstance(stored, dict) or not {
+            "count",
+            "head_seq",
+            "head_hash",
+        } <= set(stored):
+            raise AuditError("malformed audit export: checkpoint is missing")
         actual: dict[str, Any] = {
             "count": len(entries),
             "head_seq": entries[-1]["seq"] if entries else 0,
@@ -401,13 +463,22 @@ class AuditChain:
 
     @classmethod
     def checkpoint_from_file(cls, path: Union[str, Path]) -> AuditCheckpoint:
-        data = json.loads(Path(path).read_text())
-        raw = data.get("checkpoint", data)
-        return AuditCheckpoint(
-            count=int(raw["count"]),
-            head_seq=int(raw["head_seq"]),
-            head_hash=str(raw["head_hash"]),
-        )
+        """Read a checkpoint from an export or a bare checkpoint file.
+
+        The values are not verified here; run ``verify_export`` first when the
+        file is untrusted.
+        """
+
+        try:
+            data = json.loads(Path(path).read_text())
+            raw = data.get("checkpoint", data)
+            return AuditCheckpoint(
+                count=int(raw["count"]),
+                head_seq=int(raw["head_seq"]),
+                head_hash=str(raw["head_hash"]),
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise AuditError(f"invalid checkpoint file: {exc}") from exc
 
     # ------------------------------------------------------------------
     # Hashing helpers
@@ -421,9 +492,8 @@ class AuditChain:
         payload_text: str,
         prev_hash: str,
     ) -> str:
-        material = CANONICAL_SEPARATOR.join(
-            [str(seq), kind, ref_id, recorded_at, prev_hash, payload_text]
-        )
+        parts = [str(seq), kind, ref_id, recorded_at, prev_hash, payload_text]
+        material = "".join(f"{len(part)}:{part}" for part in parts)
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     @staticmethod

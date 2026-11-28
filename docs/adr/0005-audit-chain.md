@@ -49,7 +49,8 @@ append-only SQLite triggers as defence in depth, and make checkpoints exportable
 
 ## Consequences
 
-- Every ledger write appends one row; verification and export are O(n).
+- Every ledger write appends one row in the same transaction as the source row;
+  a failed append rolls back both. Verification and export are O(n).
 - A deleted middle row, a rewritten entry, a rewritten prediction/outcome, and
   a moved settlement pointer are detected.
 - Deleting the newest rows is only detected when an external checkpoint is

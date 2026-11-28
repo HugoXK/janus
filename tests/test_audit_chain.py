@@ -18,7 +18,9 @@ from janus.memory.audit import (
     EntryHashError,
     SourceDriftError,
     SourceMissingError,
+    UnchainedRowError,
 )
+from janus.memory.models import Prediction
 from janus.memory.store import JanusStore
 from janus.thesis.tracker import ThesisTracker
 
@@ -269,3 +271,97 @@ def test_rewritten_settlement_pointer_is_detected() -> None:
 
     with pytest.raises(SourceDriftError):
         AuditChain(store).verify()
+
+
+def test_failed_append_rolls_back_the_prediction(monkeypatch) -> None:
+    store = JanusStore(":memory:")
+    ledger, prediction = _prediction(store)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("crash before audit append")
+
+    monkeypatch.setattr(ledger.audit, "append", boom)
+    with pytest.raises(RuntimeError):
+        ledger.record(
+            thesis_id=_thesis(store).id,
+            target="direction",
+            horizon="1M",
+            as_of=T0,
+            model_version="baseline-0.1",
+            features_hash="def",
+            probability=0.5,
+        )
+
+    count = store.connection.execute("SELECT COUNT(*) FROM prediction").fetchone()[0]
+    assert count == 1  # only the prediction recorded before the failing call
+    entries = store.connection.execute("SELECT COUNT(*) FROM audit_entry").fetchone()[0]
+    assert entries == 1
+
+
+def test_failed_outcome_append_rolls_back_outcome_and_pointer(monkeypatch) -> None:
+    store = JanusStore(":memory:")
+    ledger, prediction = _prediction(store)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("crash before outcome audit append")
+
+    monkeypatch.setattr(ledger.audit, "append", boom)
+    with pytest.raises(RuntimeError):
+        ledger.settle(
+            prediction.id,
+            realized_value={"direction": "up"},
+            source="test",
+            realized_at=T0 + timedelta(days=30),
+        )
+
+    assert store.connection.execute("SELECT COUNT(*) FROM outcome").fetchone()[0] == 0
+    assert store.get_prediction(prediction.id).outcome_id is None
+    assert len(ledger.audit.entries()) == 1
+
+
+def test_backdated_entry_exports_a_verifiable_prefix(tmp_path: Path) -> None:
+    store = JanusStore(":memory:")
+    chain = AuditChain(store)
+    chain.append("share", "b-1", {"n": 1}, recorded_at=T0)
+    chain.append("share", "b-2", {"n": 2}, recorded_at=T0 - timedelta(days=1))
+
+    target = tmp_path / "backdated.json"
+    checkpoint = chain.export(target, as_of=T0 + timedelta(hours=1))
+    assert checkpoint.count == 2
+    report = AuditChain.verify_export(target)
+    assert report.count == 2
+    assert [entry.seq for entry in chain.entries(as_of=T0 + timedelta(hours=1))] == [
+        1,
+        2,
+    ]
+
+
+def test_require_complete_flags_an_unchained_row() -> None:
+    store = JanusStore(":memory:")
+    ledger, prediction = _prediction(store)
+    store.insert_prediction(
+        Prediction(
+            id="manual-row",
+            thesis_id=prediction.thesis_id,
+            target="direction",
+            horizon="1M",
+            model_version="baseline-0.1",
+            features_hash="manual",
+            as_of=T0,
+        )
+    )
+
+    ledger.audit.verify()  # chain itself is intact
+    with pytest.raises(UnchainedRowError):
+        ledger.audit.verify(require_complete=True)
+
+
+def test_verify_export_rejects_malformed_files(tmp_path: Path) -> None:
+    target = tmp_path / "bad.json"
+    target.write_text("{not json")
+    with pytest.raises(AuditError):
+        AuditChain.verify_export(target)
+
+    target.write_text(json.dumps({"version": 1, "entries": [{"seq": "x"}]}))
+    with pytest.raises(AuditError):
+        AuditChain.verify_export(target)

@@ -436,6 +436,11 @@ def audit_verify(
     checkpoint: Optional[str] = typer.Option(
         None, "--checkpoint", help="Exported audit JSON to compare against"
     ),
+    require_complete: bool = typer.Option(
+        False,
+        "--require-complete",
+        help="Also fail when a prediction/outcome has no audit entry",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
 ) -> None:
     """Recompute the audit chain and check live rows against it."""
@@ -446,7 +451,7 @@ def audit_verify(
         expected = (
             AuditChain.checkpoint_from_file(checkpoint) if checkpoint else None
         )
-        report = chain.verify(checkpoint=expected)
+        report = chain.verify(checkpoint=expected, require_complete=require_complete)
     except AuditError as exc:
         typer.echo(f"audit chain INVALID: {exc}", err=True)
         raise typer.Exit(code=1) from exc
