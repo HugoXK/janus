@@ -62,22 +62,10 @@ core/janus/
   persona/       profile vector and master priors
   eval/          BeliefBench and walk-forward skeleton
   share/         approval-first signed sharing
-  share/         approval-first signed sharing
   mcp/           optional MCP server
-  logging.py     JSON logs, correlation scopes, redaction
   cli.py         local CLI
   demo.py        offline end-to-end demo
 ```
-
-## Logging and correlation
-
-`core/janus/logging.py` provides one structured event path. `log_event()` merges
-the active `correlation_scope()` fields (for example `run_id`, `source`,
-`entity_id`, and `as_of`) into a single JSON object. `JsonFormatter` emits one
-object per line, and `redact()` masks tokens, passwords, authorization headers,
-and credentials at any depth before they reach a handler. The CLI exposes
-`--log-format text|json` and `--log-level`; ingestion logs start, dead-letter,
-store-error, and completion events with the run id.
 
 ## Non-goals for V1
 

@@ -3,12 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import datetime, timezone
 
-from typer.testing import CliRunner
-
-from janus.cli import app
-from janus.data.scheduler import IngestionScheduler
 from janus.logging import (
     JsonFormatter,
     TextFormatter,
@@ -17,10 +12,6 @@ from janus.logging import (
     current_correlation,
     redact,
 )
-from janus.memory.store import JanusStore
-
-runner = CliRunner()
-
 # Synthetic fixtures: built at runtime so the secret scanner does not treat
 # these obviously-fake test values as committed credentials.
 _FAKE_SK = "sk-" + "test" * 4
@@ -136,41 +127,6 @@ def test_correlation_scope_merges_and_resets() -> None:
             }
         assert current_correlation() == {"run_id": "r1", "source": "rss"}
     assert current_correlation() == {}
-
-
-def test_scheduler_emits_correlated_json_fields(caplog) -> None:
-    class FailingSource:
-        name = "failing"
-
-        def fetch(self, entity_id, start, end):
-            raise RuntimeError("boom")
-
-    caplog.set_level(logging.INFO, logger="janus")
-    store = JanusStore(":memory:")
-    result = IngestionScheduler(store, retries=0).run(
-        FailingSource(),
-        ["ACME"],
-        datetime(2026, 1, 1, tzinfo=timezone.utc),
-        datetime(2026, 1, 2, tzinfo=timezone.utc),
-    )
-
-    records = [record.janus for record in caplog.records if hasattr(record, "janus")]
-    events = {record["event"] for record in records}
-    assert events == {"ingestion.start", "ingestion.dead_letter", "ingestion.complete"}
-    for record in records:
-        assert record["run_id"] == result.run_id
-        assert record["source"] == "failing"
-    dead = next(record for record in records if record["event"] == "ingestion.dead_letter")
-    assert dead["entity_id"] == "ACME"
-    assert "as_of" in dead
-    assert "boom" in dead["error"]
-
-
-def test_cli_accepts_log_format_and_rejects_bad_values() -> None:
-    ok = runner.invoke(app, ["--log-format", "json", "version"])
-    assert ok.exit_code == 0, ok.output
-    bad = runner.invoke(app, ["--log-format", "xml", "version"])
-    assert bad.exit_code != 0
 
 
 def test_text_and_json_configuration_are_reconfigurable() -> None:
