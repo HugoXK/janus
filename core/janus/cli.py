@@ -39,6 +39,7 @@ from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
+from .review.report import build_research_report
 from .memory.snapshot_archive import export_snapshot, import_snapshot, verify_snapshot
 
 app = typer.Typer(
@@ -1229,6 +1230,44 @@ def review_calibration(
         f"n={payload.get('n')} brier={payload.get('brier')} "
         f"ece={payload.get('ece')} log_loss={payload.get('log_loss')}"
     )
+
+
+@app.command()
+def report(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    out: Optional[Path] = typer.Option(None, "--out", help="Write Markdown to a file"),
+    limit: int = typer.Option(50, "--limit", help="Maximum evidence rows"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Build a deterministic as-of research report."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    if limit < 1 or limit > 10000:
+        raise typer.BadParameter("limit must be between 1 and 10000")
+    settings = load_settings()
+    try:
+        result = build_research_report(
+            JanusStore(db or settings.database), entity, stamp, limit=limit
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True, default=str))
+        return
+    markdown = result.to_markdown()
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown)
+        typer.echo(f"wrote {out}")
+    else:
+        typer.echo(markdown, nl=False)
 
 
 @app.command()
