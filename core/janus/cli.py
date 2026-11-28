@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -44,6 +45,8 @@ app = typer.Typer(
 config_app = typer.Typer(help="Inspect and validate local configuration.")
 schema_app = typer.Typer(help="Export and verify the domain contract schema.")
 model_app = typer.Typer(help="Inspect content-addressed model artifacts.")
+forecast_app = typer.Typer(help="Create, list, and settle forecasts.")
+review_app = typer.Typer(help="Debrief and calibration review.")
 blob_app = typer.Typer(help="Inspect and garbage-collect content-addressed blobs.")
 security_app = typer.Typer(help="Resolve point-in-time securities.")
 universe_app = typer.Typer(help="Query point-in-time universe membership.")
@@ -55,6 +58,8 @@ audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain."
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
+app.add_typer(forecast_app, name="forecast")
+app.add_typer(review_app, name="review")
 app.add_typer(blob_app, name="blob")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
@@ -250,7 +255,28 @@ def _service(db: Optional[str]):
 
 
 def _emit_json(payload) -> None:
-    typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    """Emit strict JSON; non-finite numbers are an error, not a bare token."""
+
+    try:
+        text = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise typer.BadParameter(f"output is not strict JSON: {exc}") from exc
+    typer.echo(text)
+
+
+def _reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite number: {value}")
+
+
+def _parse_number_map(raw: str, label: str) -> dict[str, float]:
+    try:
+        parsed = json.loads(raw, parse_constant=_reject_constant)
+        values = {str(key): float(value) for key, value in parsed.items()}
+    except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
+        raise typer.BadParameter(f"{label} must be a JSON object of finite numbers") from exc
+    if any(not math.isfinite(value) for value in values.values()):
+        raise typer.BadParameter(f"{label} must be a JSON object of finite numbers")
+    return values
 
 
 @app.command()
@@ -754,6 +780,144 @@ def retention_export(
     )
     target = export_redacted(rows, out, fields=field or [])
     typer.echo(f"wrote {len(rows)} redacted observation(s) to {target}")
+
+
+@forecast_app.command("list")
+def forecast_list(
+    thesis_id: Optional[str] = typer.Option(None, "--thesis-id", help="Filter by thesis"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List recorded forecasts."""
+
+    payload = _service(db).list_forecasts(thesis_id)
+    if as_json:
+        _emit_json(payload)
+        return
+    if not payload:
+        typer.echo("no forecasts")
+        return
+    for row in payload:
+        typer.echo(
+            f"{row['id']} {row['target']} p={row['probability']} "
+            f"as_of={row['as_of']} model={row['model_version']}"
+        )
+
+
+@forecast_app.command("create")
+def forecast_create(
+    thesis_id: str = typer.Option(..., "--thesis-id", help="Thesis id"),
+    target: str = typer.Option("direction", "--target", help="Forecast target"),
+    horizon: str = typer.Option("1M", "--horizon", help="Forecast horizon"),
+    probability: float = typer.Option(..., "--probability", help="P(up), 0..1"),
+    model_version: str = typer.Option(..., "--model-version", help="Model version"),
+    features_hash: str = typer.Option(..., "--features-hash", help="Feature vector hash"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    quantiles: Optional[str] = typer.Option(None, "--quantiles", help="JSON quantiles"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Record a forecast before its outcome exists."""
+
+    parsed_quantiles = _parse_number_map(quantiles, "--quantiles") if quantiles else None
+    try:
+        payload = _service(db).create_forecast(
+            thesis_id=thesis_id,
+            target=target,
+            horizon=horizon,
+            as_of=as_of,
+            probability=probability,
+            model_version=model_version,
+            features_hash=features_hash,
+            quantiles=parsed_quantiles,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+    else:
+        typer.echo(f"forecast {payload['id']} p={payload['probability']}")
+
+
+@forecast_app.command("settle")
+def forecast_settle(
+    prediction_id: str = typer.Argument(..., help="Prediction id"),
+    start_price: float = typer.Option(..., "--start-price", help="Start price"),
+    end_price: float = typer.Option(..., "--end-price", help="End price"),
+    realized_at: str = typer.Option(..., "--realized-at", help="Outcome timestamp"),
+    source: str = typer.Option("cli", "--source", help="Outcome source"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Settle a P(up) forecast against a price pair."""
+
+    for label, price in (("--start-price", start_price), ("--end-price", end_price)):
+        if not math.isfinite(price) or price <= 0:
+            raise typer.BadParameter(f"{label} must be a finite positive number")
+    try:
+        payload = _service(db).settle_forecast(
+            prediction_id=prediction_id,
+            start_price=start_price,
+            end_price=end_price,
+            realized_at=realized_at,
+            source=source,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+    else:
+        typer.echo(f"settled {prediction_id} score={payload['score']}")
+
+
+@review_app.command("debrief")
+def review_debrief(
+    prediction_id: str = typer.Argument(..., help="Prediction id"),
+    features: str = typer.Option(..., "--features", help="JSON feature object"),
+    regime: Optional[str] = typer.Option(None, "--regime", help="Regime label"),
+    calibration: Optional[float] = typer.Option(None, "--calibration", help="Calibration score"),
+    lessons: str = typer.Option("", "--lessons", help="Lessons learned"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Record a debrief for a settled prediction."""
+
+    parsed = _parse_number_map(features, "--features")
+    if calibration is not None and (
+        not math.isfinite(calibration) or not 0.0 <= calibration <= 1.0
+    ):
+        raise typer.BadParameter("--calibration must be a finite number in [0, 1]")
+    try:
+        payload = _service(db).debrief(
+            prediction_id=prediction_id,
+            features=parsed,
+            regime=regime,
+            calibration=calibration,
+            lessons=lessons,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        _emit_json(payload)
+    else:
+        typer.echo(f"review {payload['id']} for {prediction_id}")
+
+
+@review_app.command("calibration")
+def review_calibration(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show the calibration report over settled predictions."""
+
+    payload = _service(db).calibrate()
+    if as_json:
+        _emit_json(payload)
+        return
+    typer.echo(
+        f"n={payload.get('n')} brier={payload.get('brier')} "
+        f"ece={payload.get('ece')} log_loss={payload.get('log_loss')}"
+    )
 
 
 @app.command()
