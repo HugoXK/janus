@@ -155,6 +155,8 @@ No performance claims yet. The scaffold proves the invariants:
 | Snapshot archives are tamper-evident and replay identical features | `tests/test_snapshot_archive.py` |
 | Retention deletes only expired rows; redaction is deep and non-mutating | `tests/test_retention.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
+| Retries, dead letters, and replay | `tests/test_scheduler.py` |
+| Quality checks catch duplicate/future/stale data and are exposed via CLI + MCP | `tests/test_quality.py` |
 | Predictions are immutable and settle once | `tests/test_ledger.py` |
 | RSI stays bounded; MACD / Bollinger / OBV behave | `tests/test_indicators.py` |
 | The offline loop runs without a paid API and matches a golden file | `tests/test_demo_golden.py` |
