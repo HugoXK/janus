@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ..config import load_settings
-from ..memory.store import JanusStore
+from ..memory.store import JanusStore, open_store
 from .auth import AuthorizationError, Authorizer, authorizer_from_env
 from .service import JanusService
 
@@ -99,7 +99,7 @@ def build_server(
 
     server_class = _server_class()
 
-    janus_store = store or JanusStore(load_settings().database)
+    janus_store = store or open_store(load_settings().database)
     service = JanusService(
         janus_store,
         scenarios_root=scenarios_root or Path.cwd(),

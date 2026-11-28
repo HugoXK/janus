@@ -35,19 +35,24 @@ def test_fresh_store_has_the_current_schema() -> None:
     assert "audit_entry" in _tables(store._conn)
     assert "mcp_approval" in _tables(store._conn)
     assert "mcp_audit" in _tables(store._conn)
+    assert "encryption_key" in _tables(store._conn)
+    assert "encryption_rotation" in _tables(store._conn)
+    assert "key_id" in _columns(store._conn, "thesis")
+    assert "key_id" in _columns(store._conn, "prediction")
+    assert "key_id" in _columns(store._conn, "outcome")
     assert "snapshot_id" in _columns(store._conn, "observation")
 
 
 def test_migrations_are_idempotent() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert apply_migrations(connection) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     assert apply_migrations(connection) == []
     assert current_version(connection) == LATEST_VERSION
 
 
 def test_dry_run_does_not_write() -> None:
     connection = sqlite3.connect(":memory:")
-    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert apply_migrations(connection, dry_run=True) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     assert current_version(connection) == 0
     assert "observation" not in _tables(connection)
     assert "schema_migrations" not in _tables(connection)
@@ -70,4 +75,5 @@ def test_applied_versions_are_recorded() -> None:
         (8, "source_spans"),
         (9, "audit_chain"),
         (10, "mcp_scoped_auth"),
+        (11, "encryption_at_rest"),
     ]
