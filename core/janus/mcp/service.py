@@ -402,6 +402,34 @@ class JanusService:
             observation_id, span_id=span_id
         ).to_dict()
 
+    def resolve_entity(self, alias: str) -> dict[str, Any]:
+        self.require_read("janus_entity_resolve")
+        from ..memory.entities import EntityGraph
+
+        entity = EntityGraph(self.store).resolve(alias)
+        if entity is None:
+            raise KeyError(f"entity not found: {alias}")
+        return entity.to_dict()
+
+    def get_entity(self, entity_id: str) -> dict[str, Any]:
+        self.require_read("janus_entity_show")
+        from ..memory.entities import EntityGraph
+
+        graph = EntityGraph(self.store)
+        entity = graph.get(entity_id)
+        if entity is None:
+            raise KeyError(f"entity not found: {entity_id}")
+        return {
+            **entity.to_dict(),
+            "aliases": [alias.to_dict() for alias in graph.aliases(entity_id)],
+        }
+
+    def list_entities(self, limit: int = 200) -> list[dict[str, Any]]:
+        self.require_read("janus_entity_list")
+        from ..memory.entities import EntityGraph
+
+        return [entity.to_dict() for entity in EntityGraph(self.store).list(limit)]
+
     def list_personas(self) -> list[dict[str, Any]]:
         self.require_read("janus_persona_list")
         return [_dump(persona) for persona in self.store.list_personas()]
