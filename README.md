@@ -120,7 +120,7 @@ No performance claims yet. The scaffold proves the invariants:
 | Published and observed query modes, snapshots, pagination | `tests/test_asof.py` |
 | As-of properties hold under generated inputs | `tests/test_asof_hypothesis.py` |
 | Tiingo maps adjusted prices and re-ingestion is idempotent | `tests/test_tiingo.py` |
-| Entity graph resolves ticker, CIK, and names | `tests/test_entities.py` |
+| Entity graph resolves ticker/CIK/names and is exposed via CLI + MCP | `tests/test_entities.py` |
 | Security master and universe membership are point-in-time | `tests/test_security_master.py` |
 | Corporate actions drive an explicit, replayable price adjustment | `tests/test_corporate_actions.py` |
 | Citations resolve to exact source spans, not summaries | `tests/test_source_spans.py` |

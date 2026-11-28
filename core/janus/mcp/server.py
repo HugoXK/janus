@@ -35,6 +35,9 @@ TOOLS = [
     "janus_forecast_settle",
     "janus_review_debrief",
     "janus_calibrate",
+    "janus_entity_resolve",
+    "janus_entity_show",
+    "janus_entity_list",
     "janus_security_resolve",
     "janus_universe_members",
     "janus_corporate_actions",
@@ -54,6 +57,7 @@ RESOURCES = [
     "janus://theses",
     "janus://forecasts",
     "janus://calibration",
+    "janus://entities",
     "janus://market",
     "janus://sector",
     "janus://stock",
@@ -233,6 +237,24 @@ def build_server(
 
     @server.tool()
     @_guarded
+    def janus_entity_resolve(alias: str) -> dict[str, Any]:
+        """Resolve a ticker, CIK, or name alias to one entity."""
+        return service.resolve_entity(alias)
+
+    @server.tool()
+    @_guarded
+    def janus_entity_show(entity_id: str) -> dict[str, Any]:
+        """Show an entity with all aliases."""
+        return service.get_entity(entity_id)
+
+    @server.tool()
+    @_guarded
+    def janus_entity_list(limit: int = 200) -> list[dict[str, Any]]:
+        """List entities in the graph."""
+        return service.list_entities(limit)
+
+    @server.tool()
+    @_guarded
     def janus_persona_list() -> list[dict[str, Any]]:
         """List stored personas and their weights."""
         return service.list_personas()
@@ -340,6 +362,12 @@ def build_server(
     def janus_mcp_approval_decide(approval_id: str, decision: str) -> Any:
         """Approve or deny a pending write approval (admin scope)."""
         return service.decide_approval(approval_id, decision)
+
+    @server.resource("janus://entities")
+    @_guarded_json
+    def entities_resource() -> str:
+        service.require_resource("janus://entities")
+        return json.dumps(service.list_entities(), default=str)
 
     @server.resource("janus://theses")
     @_guarded_json
