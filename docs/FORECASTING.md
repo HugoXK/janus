@@ -143,6 +143,14 @@ explains the delta. Swapped evidence published after `as_of` raises
 janus counterfactual <prediction-id> --remove <observation-id> --persona <id>
 ```
 
+## Walk-forward evaluation
+
+`WalkForwardSplitter` creates rolling train/test windows with explicit purge and
+embargo gaps. `WalkForwardBacktester` re-fits the model per fold, reports Brier,
+log loss, accuracy, gross and net returns, and turnover. Costs are reported in
+basis points; no performance number is meaningful without them. Non-monotonic
+timestamps raise `LeakDetected`, and the same inputs produce the same report.
+
 ## Anti-lookahead rules
 
 1. Every query carries `as_of`.

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import functools
 import json
+from contextlib import contextmanager
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -19,6 +22,61 @@ from .models import (
 )
 
 
+class _LockedConnection:
+    """Serialize one SQLite connection across HTTP worker threads."""
+
+    def __init__(self, connection: sqlite3.Connection, lock: threading.RLock) -> None:
+        self._connection = connection
+        self._lock = lock
+
+    def execute(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.executemany(*args, **kwargs)
+
+    def executescript(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.executescript(*args, **kwargs)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._connection.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
+
+    def __enter__(self):
+        self._lock.acquire()
+        try:
+            self._connection.__enter__()
+        except BaseException:
+            self._lock.release()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return self._connection.__exit__(exc_type, exc, tb)
+        finally:
+            self._lock.release()
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+
+def _synchronized(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class JanusStore:
     """SQLite-backed point-in-time store.
 
@@ -28,21 +86,31 @@ class JanusStore:
 
     def __init__(self, path: Union[str, Path] = ":memory:") -> None:
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._lock = threading.RLock()
+        raw = sqlite3.connect(self.path, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA foreign_keys = ON")
+        self._conn = _LockedConnection(raw, self._lock)
         self.init_schema()
 
     @property
     def connection(self) -> sqlite3.Connection:
-        return self._conn
+        return self._conn  # type: ignore[return-value]
 
     def init_schema(self) -> None:
-        apply_migrations(self._conn)
+        apply_migrations(self._conn)  # type: ignore[arg-type]
+
+    @contextmanager
+    def locked(self):
+        """Hold the store lock for a multi-statement read or transaction."""
+
+        with self._lock:
+            yield self
 
     @property
     def schema_version(self) -> int:
-        return current_version(self._conn)
+        with self._lock:
+            return current_version(self._conn)  # type: ignore[arg-type]
 
     def close(self) -> None:
         self._conn.close()
@@ -242,7 +310,9 @@ class JanusStore:
     # ------------------------------------------------------------------
     # Predictions and outcomes
     # ------------------------------------------------------------------
-    def insert_prediction(self, prediction: Prediction) -> None:
+    def insert_prediction(
+        self, prediction: Prediction, *, commit: bool = True
+    ) -> None:
         self._conn.execute(
             """
             INSERT INTO prediction
@@ -264,7 +334,8 @@ class JanusStore:
                 prediction.outcome_id,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_prediction(self, prediction_id: str) -> Optional[Prediction]:
         row = self._conn.execute(
@@ -289,15 +360,20 @@ class JanusStore:
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_prediction(row) for row in rows]
 
-    def attach_outcome(self, prediction_id: str, outcome_id: str) -> None:
+    def attach_outcome(
+        self, prediction_id: str, outcome_id: str, *, commit: bool = True
+    ) -> None:
         """Attach an outcome. This is the only mutation allowed on a prediction."""
 
         self._conn.execute(
             "UPDATE prediction SET outcome_id = ? WHERE id = ?", (outcome_id, prediction_id)
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def insert_outcome(self, outcome: Outcome) -> None:
+    def insert_outcome(
+        self, outcome: Outcome, *, commit: bool = True
+    ) -> None:
         self._conn.execute(
             """
             INSERT INTO outcome
@@ -313,7 +389,8 @@ class JanusStore:
                 outcome.score,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_outcome(self, outcome_id: str) -> Optional[Outcome]:
         row = self._conn.execute("SELECT * FROM outcome WHERE id = ?", (outcome_id,)).fetchone()
@@ -448,3 +525,12 @@ class JanusStore:
             lessons=row["lessons"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
+
+
+for _method_name, _method in list(vars(JanusStore).items()):
+    if (
+        callable(_method)
+        and not _method_name.startswith("_")
+        and _method_name != "locked"
+    ):
+        setattr(JanusStore, _method_name, _synchronized(_method))

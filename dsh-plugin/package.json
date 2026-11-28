@@ -3,13 +3,43 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DSH plugin for Janus — memory and foresight for market beliefs.",
+  "description": "DSH plugin for Janus \u2014 memory and foresight for market beliefs.",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cron.js",
+    "SKILL.md",
+    "cordis.patch.yml",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -w -p tsconfig.json"
+    "check": "node --check index.js && node --check client.js && node --check cron.js",
+    "dev": "tsc -w -p tsconfig.json",
+    "test": "node --test cron.test.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.5.0"
+    "@types/node": "^26.6.7",
+    "typescript": "^7.0.2"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   }
 }
