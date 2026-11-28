@@ -5,6 +5,14 @@ from .profile import (
     match_master,
     profile_from_answers,
 )
+from .tournament import (
+    PersonaResult,
+    PersonaTournament,
+    TournamentReport,
+    TournamentScenario,
+    max_drawdown,
+    persona_probability,
+)
 from .weighting import (
     FEATURE_DIMENSIONS,
     EvidenceItem,
@@ -15,6 +23,12 @@ from .weighting import (
 
 __all__ = [
     "DIMENSIONS",
+    "PersonaResult",
+    "PersonaTournament",
+    "TournamentReport",
+    "TournamentScenario",
+    "max_drawdown",
+    "persona_probability",
     "FEATURE_DIMENSIONS",
     "MASTERS",
     "QUESTIONS",
