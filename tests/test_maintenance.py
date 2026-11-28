@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from typer.testing import CliRunner
 
 from janus.cli import app
@@ -71,3 +73,64 @@ def test_db_cli_check_stats_backup(tmp_path, monkeypatch) -> None:
     saved = runner.invoke(app, ["db", "backup", str(target)])
     assert saved.exit_code == 0, saved.output
     assert target.exists()
+
+
+def test_integrity_check_reports_a_corrupt_database(tmp_path) -> None:
+    path = tmp_path / "janus.db"
+    _seed(path).close()
+    # truncate the file so SQLite cannot read the schema/pages back
+    data = path.read_bytes()
+    path.write_bytes(data[: len(data) // 2])
+
+    report = integrity_check(str(path))
+    assert report.ok is False
+    assert report.integrity  # a reason is reported, not an exception
+
+    checked = runner.invoke(app, ["db", "check", "--db", str(path), "--json"])
+    assert checked.exit_code == 1
+    payload = json.loads(checked.output)
+    assert payload["ok"] is False
+    assert payload["integrity"]
+
+
+def test_backup_refuses_to_overwrite_without_force(tmp_path) -> None:
+    store = _seed(tmp_path / "janus.db")
+    target = tmp_path / "backup.db"
+    target.write_text("not a database")
+
+    try:
+        backup(store, target)
+    except FileExistsError as exc:
+        assert "already exists" in str(exc)
+    else:  # pragma: no cover - the assertion below is the contract
+        raise AssertionError("backup overwrote an existing file without force")
+
+    backup(store, target, force=True)
+    restored = JanusStore(target)
+    assert integrity_check(restored).ok is True
+
+
+def test_stats_derives_tables_from_the_schema(tmp_path) -> None:
+    store = _seed(tmp_path / "janus.db")
+    payload = stats(store)
+    assert "audit_entry" in payload["rows"]
+    assert payload["rows"]["audit_entry"] == 0
+
+
+def test_vacuum_rejects_an_open_transaction(tmp_path) -> None:
+    store = _seed(tmp_path / "janus.db")
+    store.connection.execute("BEGIN")
+    try:
+        with pytest.raises(RuntimeError, match="open transaction"):
+            vacuum(store)
+    finally:
+        store.connection.rollback()
+
+
+def test_db_cli_vacuum(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "janus.db"
+    _seed(path).close()
+    monkeypatch.setenv("JANUS_DB", str(path))
+    result = runner.invoke(app, ["db", "vacuum"])
+    assert result.exit_code == 0, result.output
+    assert "vacuum complete" in result.output
