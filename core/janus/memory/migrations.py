@@ -196,6 +196,82 @@ MIGRATIONS: list[Migration] = [
             ON ingestion_dead_letter(source, replayed_at);
         """,
     ),
+    Migration(
+        version=6,
+        name="security_master",
+        sql="""
+        CREATE TABLE IF NOT EXISTS security (
+            id           TEXT PRIMARY KEY,
+            entity_id    TEXT NOT NULL,
+            symbol       TEXT NOT NULL,
+            exchange     TEXT NOT NULL DEFAULT '',
+            currency     TEXT NOT NULL DEFAULT '',
+            share_class  TEXT NOT NULL DEFAULT '',
+            valid_from   TEXT NOT NULL,
+            valid_to     TEXT,
+            source       TEXT NOT NULL DEFAULT 'manual'
+        );
+        CREATE INDEX IF NOT EXISTS idx_security_symbol
+            ON security(symbol, valid_from, valid_to);
+        CREATE INDEX IF NOT EXISTS idx_security_entity
+            ON security(entity_id);
+
+        CREATE TABLE IF NOT EXISTS universe_membership (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            universe     TEXT NOT NULL,
+            security_id  TEXT NOT NULL,
+            valid_from   TEXT NOT NULL,
+            valid_to     TEXT,
+            source       TEXT NOT NULL DEFAULT 'manual',
+            FOREIGN KEY(security_id) REFERENCES security(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_universe_membership
+            ON universe_membership(universe, valid_from, valid_to);
+        CREATE INDEX IF NOT EXISTS idx_universe_security
+            ON universe_membership(security_id);
+        """,
+    ),
+    Migration(
+        version=7,
+        name="corporate_actions",
+        sql="""
+        CREATE TABLE IF NOT EXISTS corporate_action (
+            id                   TEXT PRIMARY KEY,
+            security_id          TEXT NOT NULL,
+            action_type          TEXT NOT NULL,
+            effective_at         TEXT NOT NULL,
+            ratio                REAL,
+            cash_amount          REAL,
+            currency             TEXT NOT NULL DEFAULT '',
+            related_security_id  TEXT,
+            source               TEXT NOT NULL DEFAULT 'manual',
+            raw_hash             TEXT NOT NULL DEFAULT '',
+            payload              TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_corporate_action_security
+            ON corporate_action(security_id, effective_at);
+        """,
+    ),
+    Migration(
+        version=8,
+        name="source_spans",
+        sql="""
+        CREATE TABLE IF NOT EXISTS source_span (
+            id             TEXT PRIMARY KEY,
+            observation_id TEXT NOT NULL,
+            blob_hash      TEXT NOT NULL,
+            locator        TEXT NOT NULL,
+            excerpt        TEXT NOT NULL,
+            start_offset   INTEGER,
+            end_offset     INTEGER,
+            source         TEXT NOT NULL DEFAULT 'manual',
+            created_at     TEXT NOT NULL,
+            FOREIGN KEY(observation_id) REFERENCES observation(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_span_observation
+            ON source_span(observation_id, locator);
+        """,
+    ),
 ]
 
 LATEST_VERSION = max(migration.version for migration in MIGRATIONS)

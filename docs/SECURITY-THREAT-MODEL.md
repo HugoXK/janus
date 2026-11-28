@@ -14,7 +14,9 @@ and states honestly which controls are live today.
 - `not implemented` — no control exists.
 
 `Status` reflects the code at the base this document was written against
-(`12cd78c0`). A planned control is never described as preventing anything.
+(`88ac454`, the `main` this revision was verified against); every citation
+below was re-checked against that tree. A planned control is never described as
+preventing anything.
 If a later change ships the sharing surface (see JAN-043 and
 `docs/ARCHITECTURE.md:30`), this document must be updated against that code
 before it is merged, not against the branch that adds it.
@@ -31,10 +33,10 @@ resources are read-only (`docs/MCP.md:22-52`).
 | Any local process can call every MCP tool: the server has no authentication or authorization | Full read/write of the local store through the tool boundary; an actor can record theses and forecasts as the user | None beyond the OS user and process boundary; the server is stdio `FastMCP` with no token check (the JAN-040 auth task is pending) | not implemented | Any process running as the same OS user can invoke write tools |
 | Arbitrary file read through `janus_beliefbench_run`'s `scenarios_path` argument | Read any file the process can open | The resolved path must equal, or sit below, the configured `scenarios_root` (`service.py:172-176`) | implemented | The root defaults to the working directory, so any file below it is loadable; there is no size or schema limit on the scenario file |
 | Write tools (`janus_thesis_create`, `janus_forecast_create`, `janus_forecast_settle`, `janus_review_debrief`) mutate the store without authorization | Forged or deleted research history | The tool surface is explicit and resources are read-only (`docs/MCP.md:44-52`); there is no per-caller authorization | partial | Same OS-user boundary as above; no audit log of tool calls |
-| Ledger tampering: a recorded forecast is meant to be immutable | Ex-post rewriting of predictions would destroy calibration evidence | The API has no update or delete path for a prediction; settlement only attaches an outcome (`core/janus/forecast/ledger.py:11-17`, `memory/store.py:292-297`) | partial | No database trigger, hash chain, or signature; direct SQLite edits by the same user are undetectable |
+| Ledger tampering: a recorded forecast is meant to be immutable | Ex-post rewriting of predictions would destroy calibration evidence | The API has no update or delete path for a prediction; settlement only attaches an outcome (`core/janus/forecast/ledger.py:11-17`, `core/janus/memory/store.py:360-366`) | partial | No database trigger, hash chain, or signature; direct SQLite edits by the same user are undetectable |
 | Resource disclosure: `janus://theses`, `janus://forecasts`, `janus://calibration` return full store contents | Leak of hypotheses and forecasts to any caller | Resources are read-only and reuse the same read paths (`server.py:186-229`) | partial | No scoping or redaction per caller |
 | Denial of service / resource exhaustion: list tools and `janus_as_of_query` have optional or no limits, and a scenario file is loaded whole | Local process memory or CPU exhaustion | None; the design is single-user and local | not implemented | A malformed or huge input can stall the host process |
-| Untrusted tool output is fed to a reasoning model: observation text, theses and review notes are attacker-influenced data | Prompt injection against the assisting model | Software computes indicators, features, calibration and settlement deterministically; the model only reasons over returned data (`README.md:436`; `docs/FORECASTING.md:98-102`) | partial | There is no output provenance marker or sanitization at the MCP boundary |
+| Untrusted tool output is fed to a reasoning model: observation text, theses and review notes are attacker-influenced data | Prompt injection against the assisting model | Software computes indicators, features, calibration and settlement deterministically; the model only reasons over returned data (`CONTRIBUTING.md`, "Principles" section; `docs/FORECASTING.md`, "LLM role" section) | partial | There is no output provenance marker or sanitization at the MCP boundary |
 | Error messages can include absolute local paths | Minor information disclosure in logs or chat | None systematic | not implemented | Paths appear in `ValueError` and `KeyError` text returned to the caller |
 
 **Open risks — MCP tools**
@@ -55,9 +57,18 @@ The store is a SQLite database under `$JANUS_HOME` (default `~/.janus`,
 and raw source documents may be cached on disk by `data/cache.py` and
 `data/blob.py`.
 
+Fitted model artifacts are a second local data location: `ModelRegistry`
+(`core/janus/forecast/registry.py`) writes one canonical JSON document per
+artifact to `$JANUS_HOME/models` (default `~/.janus/models`), named by the
+SHA-256 of its content and written with an atomic replace. A read re-derives
+that address, so an edited artifact is rejected as corrupt instead of used
+silently; nothing signs the directory, though, so an artifact placed there by
+the same OS user cannot be told apart from a locally fitted one
+(`docs/DATA_MODEL.md`, "Model artifacts (files)").
+
 | Threat | Impact | Mitigation | Status | Residual risk |
 | --- | --- | --- | --- | --- |
-| Provider API keys stored in plaintext in `config.toml` or the environment | Key theft, quota abuse, terms-of-service breach | Environment variables are preferred; `Settings` keeps keys out of `repr` and `redacted()` masks them in CLI output (`config.py:38-50,62-73`, `cli.py:101`) | partial | No keychain or encryption; file permissions depend on the OS umask |
+| Provider API keys stored in plaintext in `config.toml` or the environment | Key theft, quota abuse, terms-of-service breach | Environment variables are preferred; `Settings` keeps keys out of `repr` and `redacted()` masks them in CLI output (defined in `core/janus/config.py`; surfaced by `janus config show` in `core/janus/cli.py`) | partial | No keychain or encryption; file permissions depend on the OS umask |
 | The SQLite store is readable and writable by any process running as the user | Disclosure of research history; silent tampering with observations, forecasts and reviews | None; the database is a plain SQLite file | not implemented | Copies and backups inherit the same exposure |
 | Licensed market data cached on disk can be copied or redistributed | Terms-of-service breach | Documented policy: respect each provider's terms and do not redistribute licensed data (`SECURITY.md`); the repository ignores `*.db`, `/data/` and `*.parquet` (`.gitignore`) | partial | The cache has no provenance or expiry metadata and nothing enforces the policy |
 | Secrets committed to the repository | Credential leak in public history | `gitleaks` runs on every push to `main` and every pull request as a blocking job (`.github/workflows/security.yml:15-25`); `.env`, `*.pem` and `*.key` are ignored (`.gitignore`) | implemented | Pattern-based scanning misses novel secret formats; files copied outside the repository are not scanned |
