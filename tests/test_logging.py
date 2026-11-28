@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 
 from typer.testing import CliRunner
@@ -10,6 +11,7 @@ from janus.cli import app
 from janus.data.scheduler import IngestionScheduler
 from janus.logging import (
     JsonFormatter,
+    TextFormatter,
     configure_logging,
     correlation_scope,
     current_correlation,
@@ -18,6 +20,19 @@ from janus.logging import (
 from janus.memory.store import JanusStore
 
 runner = CliRunner()
+
+# Synthetic fixtures: built at runtime so the secret scanner does not treat
+# these obviously-fake test values as committed credentials.
+_FAKE_SK = "sk-" + "test" * 4
+_FAKE_GITHUB = "ghp_" + "x" * 24
+_FAKE_BEARER = "tok_" + "y" * 12
+_FAKE_PEM = (
+    "-----BEGIN "
+    + "RSA PRIVATE KEY"
+    + "-----\nMIIEsecret\n-----END "
+    + "RSA PRIVATE KEY"
+    + "-----"
+)
 
 
 def test_redact_masks_nested_secrets() -> None:
@@ -31,6 +46,69 @@ def test_redact_masks_nested_secrets() -> None:
         "nested": {"authorization": "***", "password_hint": "***"},
         "items": [{"token": "***"}, {"safe": 1}],
     }
+
+
+def test_redact_scrubs_secrets_in_free_text() -> None:
+    text = (
+        f"GET https://api.example.com/v1?api_key={_FAKE_SK}&x=1 failed; "
+        f"Authorization: Bearer {_FAKE_BEARER}; "
+        "url https://user:hunter2@example.com/path; "
+        f"key {_FAKE_GITHUB}"
+    )
+    scrubbed = redact(text)
+    for secret in (_FAKE_SK, _FAKE_BEARER, "hunter2", _FAKE_GITHUB):
+        assert secret not in scrubbed
+    assert "api_key=***" in scrubbed
+    assert "Bearer ***" in scrubbed
+    assert "https://***@example.com/path" in scrubbed
+
+
+def test_redact_scrubs_private_key_block() -> None:
+    assert redact(_FAKE_PEM) == "***"
+
+
+def test_json_formatter_scrubs_secret_in_exception() -> None:
+    try:
+        raise RuntimeError(
+            f"provider failed: https://api.example.com/v1?api_key={_FAKE_SK}"
+        )
+    except RuntimeError:
+        exc_info = sys.exc_info()
+    record = logging.LogRecord(
+        "janus.test", logging.ERROR, __file__, 1, "request failed", (), exc_info
+    )
+    payload = json.loads(JsonFormatter().format(record))
+    assert _FAKE_SK not in payload["exception"]
+    assert "api_key=***" in payload["exception"]
+
+
+def test_json_formatter_scrubs_secret_in_event() -> None:
+    record = logging.LogRecord(
+        "janus.test", logging.ERROR, __file__, 1, "boom", (), None
+    )
+    record.janus = {
+        "event": (
+            f"fetch https://api.example.com?token={_FAKE_BEARER} "
+            f"Authorization: Bearer {_FAKE_BEARER}"
+        )
+    }
+    payload = json.loads(JsonFormatter().format(record))
+    assert _FAKE_BEARER not in payload["event"]
+    assert "token=***" in payload["event"]
+
+
+def test_text_formatter_scrubs_secret_in_message() -> None:
+    formatter = TextFormatter("%(levelname)s %(name)s: %(message)s")
+    record = logging.LogRecord(
+        "janus.test",
+        logging.ERROR,
+        __file__,
+        1,
+        f"call failed Authorization: Bearer {_FAKE_BEARER}",
+        (),
+        None,
+    )
+    assert _FAKE_BEARER not in formatter.format(record)
 
 
 def test_json_formatter_is_one_stable_object() -> None:

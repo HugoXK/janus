@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -24,17 +25,52 @@ _SENSITIVE_MARKERS = (
 )
 REDACTED = "***"
 
+_PEM_PRIVATE_KEY = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
+    re.DOTALL,
+)
+_URL_USERINFO = re.compile(r"(?i)\b(https?://)([^/\s:@]+):([^/\s@]+)@")
+_BEARER_TOKEN = re.compile(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/=-]{6,}")
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)(?<![A-Za-z0-9])("
+    r"api[_-]?key|apikey|access[_-]?token|auth[_-]?token|refresh[_-]?token|"
+    r"client[_-]?secret|private[_-]?key|secret|token|password|passwd"
+    r")(\s*[=:]\s*)([^\s&,;\"'<>]+)"
+)
+_SECRET_SHAPE = re.compile(
+    r"\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b"
+)
+
 
 def _is_sensitive(key: Any) -> bool:
     text = str(key).lower().replace("-", "_")
     return any(marker in text for marker in _SENSITIVE_MARKERS)
 
 
+def _scrub_text(text: str) -> str:
+    """Mask credential patterns inside free-form text."""
+
+    text = _PEM_PRIVATE_KEY.sub(REDACTED, text)
+    text = _URL_USERINFO.sub(lambda match: f"{match.group(1)}{REDACTED}@", text)
+    text = _BEARER_TOKEN.sub(lambda match: f"{match.group(1)}{REDACTED}", text)
+    text = _SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text
+    )
+    return _SECRET_SHAPE.sub(REDACTED, text)
+
+
 def redact(value: Any, *, key: Optional[str] = None) -> Any:
-    """Return a copy with likely secrets masked at any depth."""
+    """Return a copy with likely secrets masked at any depth.
+
+    Free-form strings are scrubbed for credential patterns as well, so a
+    provider error carrying ``?api_key=...`` or ``Authorization: Bearer ...``
+    is masked even when it is stored under a non-sensitive key.
+    """
 
     if key is not None and _is_sensitive(key):
         return REDACTED
+    if isinstance(value, str):
+        return _scrub_text(value)
     if isinstance(value, Mapping):
         return {
             str(item_key): redact(item_value, key=str(item_key))
@@ -88,14 +124,14 @@ class TextFormatter(logging.Formatter):
         base = super().format(record)
         structured = getattr(record, "janus", None)
         if not isinstance(structured, Mapping):
-            return base
+            return _scrub_text(base)
         extra = " ".join(
             f"{key}={value}"
             for key, value in redact(structured).items()
             if key != "event"
         )
-        event = structured.get("event", record.getMessage())
-        return f"{base} {event}" + (f" {extra}" if extra else "")
+        event = redact(structured.get("event", record.getMessage()))
+        return _scrub_text(f"{base} {event}" + (f" {extra}" if extra else ""))
 
 
 def configure_logging(
