@@ -22,6 +22,7 @@ from .forecast.registry import (
     ModelRegistry,
 )
 from .memory.audit import AuditChain, AuditError
+from .memory.entities import EntityGraph
 from .memory.migrations import apply_migrations, current_version
 from .memory.retention import (
     RetentionPolicy,
@@ -55,6 +56,7 @@ actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.
 spans_app = typer.Typer(help="Inspect exact source spans and citations.")
 retention_app = typer.Typer(help="Apply retention and export redacted data.")
 mcp_app = typer.Typer(help="Inspect scoped MCP approvals and audit records.")
+entity_app = typer.Typer(help="Resolve and inspect the entity graph.")
 audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
@@ -70,6 +72,7 @@ app.add_typer(keys_app, name="keys")
 app.add_typer(spans_app, name="spans")
 app.add_typer(retention_app, name="retention")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(entity_app, name="entity")
 app.add_typer(audit_app, name="audit")
 
 
@@ -855,6 +858,72 @@ def share_verify(
         return
     typer.echo("invalid signature")
     raise typer.Exit(code=1)
+@entity_app.command("resolve")
+def entity_resolve(
+    alias: str = typer.Argument(..., help="Ticker, CIK, or name alias"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve an alias to one entity."""
+
+    entity = EntityGraph(_open_store(db)).resolve(alias)
+    if entity is None:
+        typer.echo(f"entity not found: {alias}", err=True)
+        raise typer.Exit(code=1)
+    if as_json:
+        typer.echo(json.dumps(entity.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{entity.id} {entity.name} ticker={entity.ticker or '-'} "
+            f"cik={entity.cik or '-'}"
+        )
+
+
+@entity_app.command("show")
+def entity_show(
+    entity_id: str = typer.Argument(..., help="Entity id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show an entity and its aliases."""
+
+    graph = EntityGraph(_open_store(db))
+    entity = graph.get(entity_id)
+    if entity is None:
+        typer.echo(f"entity not found: {entity_id}", err=True)
+        raise typer.Exit(code=1)
+    payload = {
+        **entity.to_dict(),
+        "aliases": [alias.to_dict() for alias in graph.aliases(entity_id)],
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"{entity.id} {entity.name}")
+        for alias in payload["aliases"]:
+            typer.echo(f"- {alias['alias']} ({alias['source']})")
+
+
+@entity_app.command("list")
+def entity_list(
+    limit: int = typer.Option(200, "--limit", help="Maximum entities"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List entities in the graph."""
+
+    try:
+        entities = EntityGraph(_open_store(db)).list(limit)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = [entity.to_dict() for entity in entities]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    elif not payload:
+        typer.echo("no entities")
+    else:
+        for entity in payload:
+            typer.echo(f"{entity['id']} {entity['name']} ticker={entity['ticker'] or '-'}")
 def _retention_rule(value: str) -> RetentionRule:
     parts = value.split(":")
     if len(parts) != 3:
@@ -1072,6 +1141,57 @@ def review_calibration(
         f"n={payload.get('n')} brier={payload.get('brier')} "
         f"ece={payload.get('ece')} log_loss={payload.get('log_loss')}"
     )
+
+
+@app.command()
+def quality(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    limit: Optional[int] = typer.Option(
+        500, "--limit", help="Newest observations to inspect (1-5000)"
+    ),
+    max_age_days: int = typer.Option(
+        7, "--max-age-days", help="Staleness threshold in days"
+    ),
+    all_rows: bool = typer.Option(
+        False, "--all", help="Inspect every observation knowable at as-of"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run duplicate/provenance/price/staleness checks over an as-of view."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
+    from .mcp.service import JanusService
+
+    try:
+        payload = JanusService(_open_store(db)).quality_report(
+            entity,
+            stamp,
+            limit=None if all_rows else limit,
+            max_age_days=max_age_days,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    window = payload["window"]
+    typer.echo(
+        f"{entity} as_of={payload['as_of']} checked={payload['checked']} "
+        f"errors={len(payload['errors'])} warnings={len(payload['warnings'])} "
+        f"truncated={payload['truncated']} "
+        f"window={window['from']}..{window['to']}"
+    )
+    for issue in payload["errors"] + payload["warnings"]:
+        typer.echo(f"- {issue['severity']}: {issue['code']} {issue['message']}")
 
 
 @app.command()
