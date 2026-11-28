@@ -57,6 +57,7 @@ TOOL_SCOPES: dict[str, str] = {
     "janus_adjust_price": READ,
     "janus_source_spans": READ,
     "janus_source_citation": READ,
+    "janus_provenance_trace": READ,
     "janus_mcp_approval_list": ADMIN,
     "janus_mcp_approval_decide": ADMIN,
 }
@@ -69,6 +70,7 @@ RESOURCE_SCOPES: dict[str, str] = {
     "janus://market": READ,
     "janus://sector": READ,
     "janus://stock": READ,
+    "janus://provenance": READ,
 }
 
 WRITE_TOOLS = frozenset(name for name, scope in TOOL_SCOPES.items() if scope == WRITE)

@@ -31,6 +31,7 @@ from .memory.retention import (
 )
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
+from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
 from .memory.store import JanusStore
@@ -815,6 +816,29 @@ def db_stats(
             f"path={payload['path']} bytes={payload['bytes']} "
             f"rows={payload['total_rows']} schema={payload['schema_version']}"
         )
+
+
+@app.command()
+def provenance(
+    observation_id: str = typer.Argument(..., help="Observation id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve an observation id to its citation and source span."""
+
+    settings = load_settings()
+    tracer = ProvenanceTracer(JanusStore(db or settings.database))
+    try:
+        traced = tracer.require(observation_id)
+    except ProvenanceError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(
+            json.dumps(traced.to_dict(), indent=2, sort_keys=True, default=str)
+        )
+    else:
+        typer.echo(traced.citation)
 
 
 @app.command()
