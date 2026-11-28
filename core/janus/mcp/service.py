@@ -316,6 +316,44 @@ class JanusService:
         self.require_read("janus_calibrate")
         return asdict(CalibrationService.from_store(self.store))
 
+    def quality_report(
+        self,
+        entity_id: str,
+        as_of: str | datetime,
+        *,
+        limit: Optional[int] = 500,
+        max_age_days: int = 7,
+    ) -> dict[str, Any]:
+        self.require_read("janus_quality")
+        from ..data.quality import check_observations
+        from ..memory.models import Observation
+
+        stamp = _parse_time(as_of)
+        if limit is not None and not 1 <= limit <= 5000:
+            raise ValueError("limit must be between 1 and 5000")
+        rows = self.as_of_query(entity_id, stamp)
+        observations = [Observation.model_validate(row) for row in rows]
+        truncated = limit is not None and len(observations) > limit
+        if truncated and limit is not None:
+            observations = observations[-limit:]
+        report = check_observations(
+            observations, as_of=stamp, max_age_days=max_age_days
+        )
+        window = {
+            "from": observations[0].published_at.isoformat() if observations else None,
+            "to": observations[-1].published_at.isoformat() if observations else None,
+        }
+        return {
+            "entity_id": entity_id,
+            "as_of": stamp.isoformat(),
+            "checked": report.checked,
+            "limit": limit,
+            "truncated": truncated,
+            "window": window,
+            "errors": [asdict(issue) for issue in report.errors],
+            "warnings": [asdict(issue) for issue in report.warnings],
+        }
+
     def provenance_trace(self, observation_id: str) -> dict[str, Any]:
         self.require_read("janus_provenance_trace")
         from ..memory.provenance import ProvenanceTracer
@@ -402,6 +440,34 @@ class JanusService:
             observation_id, span_id=span_id
         ).to_dict()
 
+    def resolve_entity(self, alias: str) -> dict[str, Any]:
+        self.require_read("janus_entity_resolve")
+        from ..memory.entities import EntityGraph
+
+        entity = EntityGraph(self.store).resolve(alias)
+        if entity is None:
+            raise KeyError(f"entity not found: {alias}")
+        return entity.to_dict()
+
+    def get_entity(self, entity_id: str) -> dict[str, Any]:
+        self.require_read("janus_entity_show")
+        from ..memory.entities import EntityGraph
+
+        graph = EntityGraph(self.store)
+        entity = graph.get(entity_id)
+        if entity is None:
+            raise KeyError(f"entity not found: {entity_id}")
+        return {
+            **entity.to_dict(),
+            "aliases": [alias.to_dict() for alias in graph.aliases(entity_id)],
+        }
+
+    def list_entities(self, limit: int = 200) -> list[dict[str, Any]]:
+        self.require_read("janus_entity_list")
+        from ..memory.entities import EntityGraph
+
+        return [entity.to_dict() for entity in EntityGraph(self.store).list(limit)]
+
     def list_personas(self) -> list[dict[str, Any]]:
         self.require_read("janus_persona_list")
         return [_dump(persona) for persona in self.store.list_personas()]
@@ -417,6 +483,7 @@ class JanusService:
         trend: float = 0.0,
         evidence: Optional[list[str]] = None,
     ) -> dict[str, Any]:
+        self.require_read("janus_scenario_tree")
         from ..forecast.scenarios import generate_scenario_tree
 
         tree = generate_scenario_tree(
@@ -433,6 +500,7 @@ class JanusService:
     def quantile_forecast(
         self, returns: list[float], *, horizon: int = 1
     ) -> dict[str, Any]:
+        self.require_read("janus_quantile_forecast")
         from ..forecast.quantiles import EmpiricalQuantileModel
 
         forecast = EmpiricalQuantileModel().fit(returns).predict(horizon=horizon)

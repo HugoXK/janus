@@ -140,6 +140,12 @@ naive `--as-of` so a destructive cutoff cannot silently use the host time zone.
 Retention deletes observation rows but leaves their content-addressed blobs on
 disk. Run `janus blob gc` afterwards when the raw documents were meant to age
 out as well.
+## Maintenance
+
+`core/janus/memory/maintenance.py` wraps `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check`, the SQLite backup API, `VACUUM`, and per-table row
+counts. The CLI exposes `janus db check|backup|vacuum|stats`; backups are written
+through SQLite's online backup API so the copy is consistent.
 
 ## As-of semantics
 
@@ -170,6 +176,21 @@ The `observed` mode is intentionally different: it can include a row whose
 publication timestamp is in the future if the system ingested it early. That is
 a data-quality anomaly, not a license to use future knowledge; the published
 mode remains the default.
+
+## Encryption at rest
+
+Free-text columns in `thesis` (`statement`, `assumptions`, `catalysts`,
+`risks`, `falsifiers`), `prediction.target` and `outcome.realized_value` are
+sealed with AES-256-GCM under the data key named by the row's `key_id`. The data
+key is wrapped by the master key (KEK) and stored in `encryption_key`;
+`key_id IS NULL` means the row predates migration. Rotation progress lives in
+`encryption_rotation(target, last_rowid)`, so an interrupted rotation resumes.
+Ids, timestamps, statuses, numbers and hashes stay plaintext, which keeps `as_of`
+filtering, ordering and pagination independent of ciphertext. Each ciphertext is
+bound to `<table>.<column>:<row id>`, so a value moved to another column or row
+fails authentication. Blobs stay content-addressed by the plaintext SHA-256
+(`raw_hash`/`raw_uri` unchanged) while their contents are sealed. Full key
+hierarchy, migration and recovery: `docs/adr/0005-encryption-at-rest.md`.
 
 ## Immutability
 

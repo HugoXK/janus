@@ -21,7 +21,9 @@ from .forecast.registry import (
     ModelArtifact,
     ModelRegistry,
 )
+from .memory.maintenance import backup, integrity_check, stats, vacuum
 from .memory.audit import AuditChain, AuditError
+from .memory.entities import EntityGraph
 from .memory.migrations import apply_migrations, current_version
 from .memory.retention import (
     RetentionPolicy,
@@ -31,6 +33,7 @@ from .memory.retention import (
 )
 from .memory.models import ObservationKind
 from .memory.corporate_actions import CorporateActionLedger
+from .memory.encryption_cli import keys_app
 from .memory.provenance import ProvenanceError, ProvenanceTracer
 from .memory.security_master import SecurityMaster
 from .memory.spans import SpanStore
@@ -53,7 +56,9 @@ actions_app = typer.Typer(help="Inspect corporate actions and price adjustments.
 spans_app = typer.Typer(help="Inspect exact source spans and citations.")
 retention_app = typer.Typer(help="Apply retention and export redacted data.")
 mcp_app = typer.Typer(help="Inspect scoped MCP approvals and audit records.")
+entity_app = typer.Typer(help="Resolve and inspect the entity graph.")
 audit_app = typer.Typer(help="Verify and export the tamper-evident audit chain.")
+db_app = typer.Typer(help="Check, back up, and maintain the SQLite store.")
 app.add_typer(config_app, name="config")
 app.add_typer(schema_app, name="schema")
 app.add_typer(model_app, name="model")
@@ -63,10 +68,13 @@ app.add_typer(blob_app, name="blob")
 app.add_typer(security_app, name="security")
 app.add_typer(universe_app, name="universe")
 app.add_typer(actions_app, name="actions")
+app.add_typer(keys_app, name="keys")
 app.add_typer(spans_app, name="spans")
 app.add_typer(retention_app, name="retention")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(entity_app, name="entity")
 app.add_typer(audit_app, name="audit")
+app.add_typer(db_app, name="db")
 
 
 @app.command()
@@ -111,8 +119,8 @@ def asof(
             valid = ", ".join(item.value for item in ObservationKind)
             raise typer.BadParameter(f"kind must be one of: {valid}") from exc
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    load_settings()
+    store = _open_store(db)
     try:
         rows = store.query_observations_as_of(
             entity,
@@ -221,9 +229,9 @@ def blob_gc(
 ) -> None:
     """Delete blobs that no observation references."""
 
-    settings = load_settings()
+    load_settings()
     result = LocalBlobStore(_blob_root(root)).gc(
-        JanusStore(db or settings.database), dry_run=dry_run
+        _open_store(db), dry_run=dry_run
     )
     if as_json:
         typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
@@ -234,11 +242,22 @@ def blob_gc(
         )
 
 
+def _open_store(db: Optional[str]) -> JanusStore:
+    from .memory.encryption import EncryptionError
+    from .memory.store import open_store
+
+    settings = load_settings()
+    try:
+        return open_store(db or settings.database)
+    except EncryptionError as exc:
+        typer.echo(f"error [{exc.code}]: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 def _service(db: Optional[str]):
     from .mcp.service import JanusService
 
-    settings = load_settings()
-    return JanusService(JanusStore(db or settings.database))
+    return JanusService(_open_store(db))
 
 
 def _emit_json(payload) -> None:
@@ -330,9 +349,9 @@ def serve(
 
     from .server import make_server
 
-    settings = load_settings()
+    load_settings()
     server = make_server(
-        JanusStore(db or settings.database),
+        _open_store(db),
         host=host,
         port=port,
         token=os.environ.get("JANUS_API_TOKEN") or None,
@@ -348,8 +367,8 @@ def serve(
 def _scoped_authorizer(db: Optional[str]):
     from .mcp.auth import authorizer_from_env
 
-    settings = load_settings()
-    store = JanusStore(db or settings.database)
+    load_settings()
+    store = _open_store(db)
     return store, authorizer_from_env(store)
 
 
@@ -485,8 +504,8 @@ def security_resolve(
 ) -> None:
     """Resolve a symbol as it existed at one time."""
 
-    settings = load_settings()
-    security = SecurityMaster(JanusStore(db or settings.database)).resolve(
+    load_settings()
+    security = SecurityMaster(_open_store(db)).resolve(
         symbol, _as_of_option(as_of), exchange=exchange
     )
     if security is None:
@@ -509,8 +528,8 @@ def security_history(
 ) -> None:
     """Show every security-master row for a symbol."""
 
-    settings = load_settings()
-    rows = SecurityMaster(JanusStore(db or settings.database)).history(symbol)
+    load_settings()
+    rows = SecurityMaster(_open_store(db)).history(symbol)
     payload = [row.to_dict() for row in rows]
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -531,8 +550,8 @@ def universe_members(
 ) -> None:
     """Return the members that existed in a universe at one time."""
 
-    settings = load_settings()
-    rows = SecurityMaster(JanusStore(db or settings.database)).members(
+    load_settings()
+    rows = SecurityMaster(_open_store(db)).members(
         universe, _as_of_option(as_of)
     )
     payload = [row.to_dict() for row in rows]
@@ -552,9 +571,9 @@ def actions_list(
 ) -> None:
     """List corporate actions in effective-time order."""
 
-    settings = load_settings()
+    load_settings()
     stamp = _as_of_option(as_of) if as_of else None
-    rows = CorporateActionLedger(JanusStore(db or settings.database)).list(
+    rows = CorporateActionLedger(_open_store(db)).list(
         security_id, as_of=stamp
     )
     payload = [row.to_dict() for row in rows]
@@ -577,8 +596,8 @@ def actions_adjust(
 ) -> None:
     """Adjust a raw price and print the explicit basis."""
 
-    settings = load_settings()
-    payload = CorporateActionLedger(JanusStore(db or settings.database)).adjust_price(
+    load_settings()
+    payload = CorporateActionLedger(_open_store(db)).adjust_price(
         security_id, raw_price, _as_of_option(as_of)
     )
     if as_json:
@@ -598,8 +617,8 @@ def spans_list(
 ) -> None:
     """List exact source spans for one observation."""
 
-    settings = load_settings()
-    rows = SpanStore(JanusStore(db or settings.database)).list(observation_id)
+    load_settings()
+    rows = SpanStore(_open_store(db)).list(observation_id)
     payload = [row.to_dict() for row in rows]
     if as_json:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -619,9 +638,9 @@ def citation(
 ) -> None:
     """Print a citation backed by an exact source span."""
 
-    settings = load_settings()
+    load_settings()
     try:
-        result = SpanStore(JanusStore(db or settings.database)).citation(
+        result = SpanStore(_open_store(db)).citation(
             observation_id, span_id=span_id
         )
     except KeyError as exc:
@@ -646,8 +665,8 @@ def audit_verify(
 ) -> None:
     """Recompute the audit chain and check live rows against it."""
 
-    settings = load_settings()
-    chain = AuditChain(JanusStore(db or settings.database))
+    load_settings()
+    chain = AuditChain(_open_store(db))
     try:
         expected = (
             AuditChain.checkpoint_from_file(checkpoint) if checkpoint else None
@@ -680,14 +699,80 @@ def audit_export(
 ) -> None:
     """Export the chain and its head checkpoint for offline verification."""
 
-    settings = load_settings()
-    chain = AuditChain(JanusStore(db or settings.database))
+    load_settings()
+    chain = AuditChain(_open_store(db))
     checkpoint = chain.export(
         out, as_of=_as_of_option(as_of) if as_of else None
     )
     typer.echo(f"exported {checkpoint.count} entries to {out}")
 
 
+@entity_app.command("resolve")
+def entity_resolve(
+    alias: str = typer.Argument(..., help="Ticker, CIK, or name alias"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Resolve an alias to one entity."""
+
+    entity = EntityGraph(_open_store(db)).resolve(alias)
+    if entity is None:
+        typer.echo(f"entity not found: {alias}", err=True)
+        raise typer.Exit(code=1)
+    if as_json:
+        typer.echo(json.dumps(entity.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"{entity.id} {entity.name} ticker={entity.ticker or '-'} "
+            f"cik={entity.cik or '-'}"
+        )
+
+
+@entity_app.command("show")
+def entity_show(
+    entity_id: str = typer.Argument(..., help="Entity id"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show an entity and its aliases."""
+
+    graph = EntityGraph(_open_store(db))
+    entity = graph.get(entity_id)
+    if entity is None:
+        typer.echo(f"entity not found: {entity_id}", err=True)
+        raise typer.Exit(code=1)
+    payload = {
+        **entity.to_dict(),
+        "aliases": [alias.to_dict() for alias in graph.aliases(entity_id)],
+    }
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"{entity.id} {entity.name}")
+        for alias in payload["aliases"]:
+            typer.echo(f"- {alias['alias']} ({alias['source']})")
+
+
+@entity_app.command("list")
+def entity_list(
+    limit: int = typer.Option(200, "--limit", help="Maximum entities"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """List entities in the graph."""
+
+    try:
+        entities = EntityGraph(_open_store(db)).list(limit)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = [entity.to_dict() for entity in entities]
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    elif not payload:
+        typer.echo("no entities")
+    else:
+        for entity in payload:
+            typer.echo(f"{entity['id']} {entity['name']} ticker={entity['ticker'] or '-'}")
 def _retention_rule(value: str) -> RetentionRule:
     parts = value.split(":")
     if len(parts) != 3:
@@ -726,9 +811,9 @@ def retention_apply(
         rules=tuple(_retention_rule(item) for item in (rule or [])),
         default_max_age_days=default_days,
     )
-    settings = load_settings()
+    load_settings()
     result = apply_retention(
-        JanusStore(db or settings.database),
+        _open_store(db),
         as_of=stamp,
         policy=policy,
         dry_run=dry_run,
@@ -761,14 +846,81 @@ def retention_export(
         raise typer.BadParameter(
             "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
         )
-    settings = load_settings()
-    rows = JanusStore(db or settings.database).query_observations_as_of(
+    load_settings()
+    rows = _open_store(db).query_observations_as_of(
         entity, stamp, mode="published"
     )
     target = export_redacted(rows, out, fields=field or [])
     typer.echo(f"wrote {len(rows)} redacted observation(s) to {target}")
 
 
+@db_app.command("check")
+def db_check(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run SQLite integrity and foreign-key checks on a possibly corrupt file."""
+
+    settings = load_settings()
+    report = integrity_check(db or settings.database)
+    if as_json:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"ok={report.ok} integrity={', '.join(report.integrity)} "
+            f"foreign_key_errors={len(report.foreign_key_errors)}"
+        )
+    if not report.ok:
+        raise typer.Exit(code=1)
+
+
+@db_app.command("backup")
+def db_backup(
+    out: Path = typer.Argument(..., help="Backup destination"),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing non-empty target"
+    ),
+) -> None:
+    """Write a consistent SQLite backup."""
+
+    try:
+        target = backup(_open_store(db), out, force=force)
+    except FileExistsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"wrote {target}")
+
+
+@db_app.command("vacuum")
+def db_vacuum(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+) -> None:
+    """Reclaim unused SQLite space."""
+
+    try:
+        vacuum(_open_store(db))
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo("vacuum complete")
+
+
+@db_app.command("stats")
+def db_stats(
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Show row counts, file size, and schema version."""
+
+    payload = stats(_open_store(db))
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"path={payload['path']} bytes={payload['bytes']} "
+            f"rows={payload['total_rows']} schema={payload['schema_version']}"
+        )
 @forecast_app.command("list")
 def forecast_list(
     thesis_id: Optional[str] = typer.Option(None, "--thesis-id", help="Filter by thesis"),
@@ -908,6 +1060,57 @@ def review_calibration(
 
 
 @app.command()
+def quality(
+    entity: str = typer.Argument(..., help="Entity id, e.g. ACME"),
+    as_of: str = typer.Option(..., "--as-of", help="Point-in-time timestamp"),
+    limit: Optional[int] = typer.Option(
+        500, "--limit", help="Newest observations to inspect (1-5000)"
+    ),
+    max_age_days: int = typer.Option(
+        7, "--max-age-days", help="Staleness threshold in days"
+    ),
+    all_rows: bool = typer.Option(
+        False, "--all", help="Inspect every observation knowable at as-of"
+    ),
+    db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Run duplicate/provenance/price/staleness checks over an as-of view."""
+
+    try:
+        stamp = datetime.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("use an ISO timestamp") from exc
+    if stamp.tzinfo is None:
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
+    from .mcp.service import JanusService
+
+    try:
+        payload = JanusService(_open_store(db)).quality_report(
+            entity,
+            stamp,
+            limit=None if all_rows else limit,
+            max_age_days=max_age_days,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        return
+    window = payload["window"]
+    typer.echo(
+        f"{entity} as_of={payload['as_of']} checked={payload['checked']} "
+        f"errors={len(payload['errors'])} warnings={len(payload['warnings'])} "
+        f"truncated={payload['truncated']} "
+        f"window={window['from']}..{window['to']}"
+    )
+    for issue in payload["errors"] + payload["warnings"]:
+        typer.echo(f"- {issue['severity']}: {issue['code']} {issue['message']}")
+
+
+@app.command()
 def provenance(
     observation_id: str = typer.Argument(..., help="Observation id"),
     db: Optional[str] = typer.Option(None, "--db", help="SQLite path"),
@@ -915,8 +1118,8 @@ def provenance(
 ) -> None:
     """Resolve an observation id to its citation and source span."""
 
-    settings = load_settings()
-    tracer = ProvenanceTracer(JanusStore(db or settings.database))
+    load_settings()
+    tracer = ProvenanceTracer(_open_store(db))
     try:
         traced = tracer.require(observation_id)
     except ProvenanceError as exc:
@@ -1043,10 +1246,10 @@ def archive_export(
         raise typer.BadParameter("use an ISO timestamp") from exc
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    settings = load_settings()
+    load_settings()
     try:
         manifest = export_snapshot(
-            JanusStore(db or settings.database),
+            _open_store(db),
             out,
             as_of=stamp,
             parquet=not no_parquet,
@@ -1090,10 +1293,10 @@ def archive_import(
 ) -> None:
     """Import a verified archive into a store."""
 
-    settings = load_settings()
+    load_settings()
     try:
         counts = import_snapshot(
-            JanusStore(db or settings.database), directory, verify=not skip_verify
+            _open_store(db), directory, verify=not skip_verify
         )
     except ValueError as exc:
         typer.echo(str(exc), err=True)
