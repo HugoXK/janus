@@ -159,7 +159,6 @@ No performance claims yet. The scaffold proves the invariants:
 | Research reports are deterministic, as-of bounded, and cite sources | `tests/test_report.py` |
 | Persona evolution is seeded and held-out gated | `tests/test_persona_evolution.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
-| Structured logs carry run/entity/source/as-of and redact secrets | `tests/test_logging.py` |
 | Store integrity, backup, stats, and vacuum are tested | `tests/test_maintenance.py` |
 | Quality checks catch duplicate, future, and stale data | `tests/test_quality.py` |
 | Retries, dead letters, and replay | `tests/test_scheduler.py` |
