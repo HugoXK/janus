@@ -943,12 +943,13 @@ def quality(
     except ValueError as exc:
         raise typer.BadParameter("use an ISO timestamp") from exc
     if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
-    settings = load_settings()
+        raise typer.BadParameter(
+            "--as-of must include a timezone offset, e.g. 2026-02-01T00:00:00+00:00"
+        )
     from .mcp.service import JanusService
 
     try:
-        payload = JanusService(JanusStore(db or settings.database)).quality_report(
+        payload = JanusService(_open_store(db)).quality_report(
             entity,
             stamp,
             limit=None if all_rows else limit,

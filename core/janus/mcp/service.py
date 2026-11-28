@@ -331,7 +331,7 @@ class JanusService:
         stamp = _parse_time(as_of)
         if limit is not None and not 1 <= limit <= 5000:
             raise ValueError("limit must be between 1 and 5000")
-        rows = self.as_of_query(entity_id, as_of)
+        rows = self.as_of_query(entity_id, stamp)
         observations = [Observation.model_validate(row) for row in rows]
         truncated = limit is not None and len(observations) > limit
         if truncated and limit is not None:
