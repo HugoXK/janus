@@ -20,7 +20,7 @@ time*, so a legitimate dependabot bump stays green:
 
 What stays a **deliberate tripwire**, and must not be "fixed" into a derived check:
 
-* `EXPECTED_PYTHON_NAMES` below -- the exact 14 Python components. Adding or removing a
+* `EXPECTED_PYTHON_NAMES` below -- the exact 15 Python components. Adding or removing a
   declared Python dependency must be a conscious test edit, not silently absorbed.
 * The contract *properties* per component: `janus:version_source`, the purl form, the
   ordering, and the rule that every lockfile entry appears exactly once. These are what
@@ -84,6 +84,7 @@ EXPECTED_PYTHON_NAMES = {
     "mypy",
     "mcp",
     "yfinance",
+    "cryptography",
 }
 
 
