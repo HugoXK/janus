@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -46,6 +47,11 @@ def _seed() -> JanusStore:
         as_of,
         {"close": 101.5, "rsi_14": 61.0, "feature_version": "v1"},
         source_hash="source-1",
+    )
+    # Fixture features are materialized "now"; pin their knowledge time to the
+    # fixture date so an as-of freeze in 2026 is allowed to include them.
+    store.connection.execute(
+        "UPDATE feature_value SET computed_at = ?", (as_of.isoformat(),)
     )
     return store
 
@@ -148,3 +154,71 @@ def test_archive_cli_export_and_verify(tmp_path, monkeypatch) -> None:
     )
     assert verified.exit_code == 0, verified.output
     assert json.loads(verified.output)["ok"] is True
+
+
+def _rewrite_manifest(target, manifest):
+    content = {
+        key: manifest[key]
+        for key in ("archive_version", "as_of", "lineage", "counts", "files")
+        if key in manifest
+    }
+    manifest["snapshot_hash"] = hashlib.sha256(
+        json.dumps(
+            content, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+    ).hexdigest()
+    (target / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_features_computed_after_as_of_are_excluded(tmp_path) -> None:
+    store = _seed()
+    store.connection.execute(
+        """
+        INSERT INTO feature_value
+        (entity_id, as_of, name, version, value, features_hash, source_hash, computed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "ACME",
+            "2026-01-02T00:00:00+00:00",
+            "leaked",
+            "v1",
+            json.dumps(1.0),
+            "leak-hash",
+            "leak-source",
+            "2099-01-01T00:00:00+00:00",
+        ),
+    )
+    target = tmp_path / "snap"
+    export_snapshot(store, target, as_of=datetime(2026, 1, 3, tzinfo=timezone.utc))
+    features = json.loads((target / "features.json").read_text())
+    assert all(row["computed_at"] <= "2026-01-03" for row in features)
+    assert not any(row["name"] == "leaked" for row in features)
+
+
+def test_manifest_missing_required_entry_is_rejected(tmp_path) -> None:
+    store = _seed()
+    target = tmp_path / "snap"
+    export_snapshot(store, target, as_of=datetime(2026, 1, 3, tzinfo=timezone.utc))
+    manifest = json.loads((target / "manifest.json").read_text())
+    manifest["files"].pop("features.json")
+    _rewrite_manifest(target, manifest)
+
+    result = verify_snapshot(target)
+    assert result.ok is False
+    assert any("required entries" in error for error in result.errors)
+    with pytest.raises(ValueError, match="manifest missing"):
+        import_snapshot(JanusStore(":memory:"), target)
+
+
+def test_manifest_unknown_or_traversal_entry_is_rejected(tmp_path) -> None:
+    store = _seed()
+    target = tmp_path / "snap"
+    export_snapshot(store, target, as_of=datetime(2026, 1, 3, tzinfo=timezone.utc))
+    manifest = json.loads((target / "manifest.json").read_text())
+    manifest["files"]["../escape.json"] = {"sha256": "0" * 64, "bytes": 1, "rows": None}
+    _rewrite_manifest(target, manifest)
+
+    result = verify_snapshot(target)
+    assert result.ok is False
+    assert any("unknown manifest entries" in error for error in result.errors)

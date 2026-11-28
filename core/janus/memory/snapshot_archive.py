@@ -13,6 +13,9 @@ from .models import Observation
 from .store import JanusStore
 
 ARCHIVE_VERSION = "snapshot-v1"
+ARCHIVE_FILES = frozenset(
+    {"observations.json", "features.json", "observations.parquet", "features.parquet"}
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,16 @@ class SnapshotVerification:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _member_path(target: Path, name: str) -> Path:
+    """Resolve one manifest entry and refuse anything outside the archive root."""
+
+    root = target.resolve()
+    candidate = (root / name).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"unsafe archive path: {name}")
+    return candidate
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -65,10 +78,10 @@ def _feature_rows(store: JanusStore, as_of: datetime) -> list[dict[str, Any]]:
         SELECT entity_id, as_of, name, version, value, features_hash, source_hash,
                computed_at
         FROM feature_value
-        WHERE as_of <= ?
+        WHERE as_of <= ? AND computed_at <= ?
         ORDER BY entity_id, as_of, name, version
         """,
-        (stamp,),
+        (stamp, stamp),
     ).fetchall()
     return [
         {
@@ -161,8 +174,23 @@ def verify_snapshot(in_dir: Path) -> SnapshotVerification:
         return SnapshotVerification(False, (f"invalid manifest: {exc}",), "")
     errors: list[str] = []
     files = manifest.get("files", {})
+    if not isinstance(files, dict):
+        errors.append("invalid manifest: files must be an object")
+        files = {}
+    missing = {"observations.json", "features.json"} - set(files)
+    if missing:
+        errors.append("manifest missing required entries: " + ", ".join(sorted(missing)))
+    unknown = set(files) - ARCHIVE_FILES
+    if unknown:
+        errors.append("unknown manifest entries: " + ", ".join(sorted(unknown)))
     for name, meta in files.items():
-        path = target / name
+        if name not in ARCHIVE_FILES:
+            continue
+        try:
+            path = _member_path(target, name)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
         if not path.exists():
             errors.append(f"missing file: {name}")
             continue
@@ -205,8 +233,21 @@ def import_snapshot(
         result = verify_snapshot(target)
         if not result.ok:
             raise ValueError("snapshot verification failed: " + "; ".join(result.errors))
-    observations = json.loads((target / "observations.json").read_text(encoding="utf-8"))
-    features = json.loads((target / "features.json").read_text(encoding="utf-8"))
+    manifest_path = target / "manifest.json"
+    if not manifest_path.exists():
+        raise ValueError("snapshot verification failed: missing manifest.json")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"snapshot verification failed: invalid manifest: {exc}") from exc
+    files = manifest.get("files", {})
+    for name in ("observations.json", "features.json"):
+        if name not in files:
+            raise ValueError(f"snapshot verification failed: manifest missing {name}")
+    observations = json.loads(
+        _member_path(target, "observations.json").read_text(encoding="utf-8")
+    )
+    features = json.loads(_member_path(target, "features.json").read_text(encoding="utf-8"))
     for row in observations:
         store.insert_observation(Observation.model_validate(row))
     with store.connection:
