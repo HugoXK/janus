@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import functools
 import json
+from contextlib import contextmanager
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
+from .encryption import KeyManager, KeyMissingError, Sealer, field_context, load_master_key
 from .migrations import apply_migrations, current_version
 from .models import (
     Observation,
@@ -19,6 +23,81 @@ from .models import (
 )
 
 
+class _LockedConnection:
+    """Serialize one SQLite connection across HTTP worker threads."""
+
+    def __init__(self, connection: sqlite3.Connection, lock: threading.RLock) -> None:
+        self._connection = connection
+        self._lock = lock
+
+    def execute(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.executemany(*args, **kwargs)
+
+    def executescript(self, *args, **kwargs):
+        with self._lock:
+            return self._connection.executescript(*args, **kwargs)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._connection.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
+
+    def __enter__(self):
+        self._lock.acquire()
+        try:
+            self._connection.__enter__()
+        except BaseException:
+            self._lock.release()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return self._connection.__exit__(exc_type, exc, tb)
+        finally:
+            self._lock.release()
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+
+def _synchronized(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+def open_store(
+    path: Union[str, Path] = ":memory:",
+    *,
+    master_key: Optional[bytes] = None,
+    environ: Optional[dict[str, str]] = None,
+) -> "JanusStore":
+    """Open a store, using the environment master key only when it is encrypted.
+
+    A plaintext store stays plaintext even when ``JANUS_MASTER_KEY`` is set: the
+    key is loaded lazily after the store reports that it needs one.
+    """
+
+    if master_key is not None:
+        return JanusStore(path, master_key=master_key)
+    try:
+        return JanusStore(path)
+    except KeyMissingError:
+        return JanusStore(path, master_key=load_master_key(environ))
+
+
 class JanusStore:
     """SQLite-backed point-in-time store.
 
@@ -26,23 +105,112 @@ class JanusStore:
     backed by Postgres later without changing the domain models.
     """
 
-    def __init__(self, path: Union[str, Path] = ":memory:") -> None:
+    def __init__(
+        self,
+        path: Union[str, Path] = ":memory:",
+        *,
+        master_key: Optional[bytes] = None,
+    ) -> None:
         self.path = str(path)
-        self._conn = sqlite3.connect(self.path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._lock = threading.RLock()
+        raw = sqlite3.connect(self.path, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA foreign_keys = ON")
+        self._conn = _LockedConnection(raw, self._lock)
         self.init_schema()
+        self._master_key = master_key
+        self._key_manager: Optional[KeyManager] = None
+        self._sealer: Optional[Sealer] = None
+        self._bootstrap_encryption()
+
+    def _bootstrap_encryption(self) -> None:
+        """Open an encrypted store only when its master key is available."""
+
+        row = self._conn.execute("SELECT 1 FROM encryption_key LIMIT 1").fetchone()
+        if row is not None:
+            if self._master_key is None:
+                raise KeyMissingError(
+                    "this store is encrypted; set JANUS_MASTER_KEY or "
+                    "JANUS_MASTER_KEY_FILE before opening it"
+                )
+            manager = KeyManager(self._conn, self._master_key)
+            active = manager.active_key_id
+            if active is None:
+                raise KeyMissingError("encrypted store has no active data key")
+            manager.dek(active)  # fail closed on a wrong master key
+            self._key_manager = manager
+            self._sealer = Sealer(manager)
+        elif self._master_key is not None:
+            self.enable_encryption()
+
+    @property
+    def encryption_enabled(self) -> bool:
+        return self._sealer is not None
+
+    @property
+    def key_manager(self) -> Optional[KeyManager]:
+        return self._key_manager
+
+    @property
+    def sealer(self) -> Optional[Sealer]:
+        return self._sealer
+
+    def enable_encryption(self) -> str:
+        """Create the first data key for a store that has none yet."""
+
+        if self._sealer is not None:
+            return self._sealer.active_key_id
+        if self._master_key is None:
+            raise KeyMissingError(
+                "no master key supplied; set JANUS_MASTER_KEY or JANUS_MASTER_KEY_FILE"
+            )
+        self._key_manager = KeyManager(self._conn, self._master_key)
+        key_id = self._key_manager.ensure_key()
+        self._sealer = Sealer(self._key_manager)
+        return key_id
+
+    def _seal_field(self, table: str, row_id: str, column: str, value: str) -> str:
+        if self._sealer is None:
+            return value
+        return self._sealer.seal(
+            value.encode("utf-8"), context=field_context(table, row_id, column)
+        )
+
+    def _unseal_field(
+        self, key_id: Optional[str], table: str, row_id: str, column: str, value: str
+    ) -> str:
+        if key_id is None:
+            return value
+        if self._sealer is None:
+            raise KeyMissingError("record is encrypted but the store has no master key")
+        return self._sealer.unseal(
+            value, context=field_context(table, row_id, column)
+        ).decode("utf-8")
 
     @property
     def connection(self) -> sqlite3.Connection:
-        return self._conn
+        return self._conn  # type: ignore[return-value]
+
+    @property
+    def _raw_connection(self) -> sqlite3.Connection:
+        """Private escape hatch for sqlite3 APIs that reject the proxy object."""
+
+        return self._conn._connection
 
     def init_schema(self) -> None:
-        apply_migrations(self._conn)
+        apply_migrations(self._conn)  # type: ignore[arg-type]
+
+    @contextmanager
+    def locked(self):
+        """Hold the store lock for a multi-statement read or transaction."""
+
+        with self._lock:
+            yield self
 
     @property
     def schema_version(self) -> int:
-        return current_version(self._conn)
+        with self._lock:
+            return current_version(self._conn)  # type: ignore[arg-type]
 
     def close(self) -> None:
         self._conn.close()
@@ -178,26 +346,34 @@ class JanusStore:
     # Theses
     # ------------------------------------------------------------------
     def insert_thesis(self, thesis: Thesis) -> None:
+        key_id = self._sealer.active_key_id if self._sealer is not None else None
         self._conn.execute(
             """
             INSERT INTO thesis
             (id, entity_id, persona_id, horizon, statement, assumptions, catalysts,
-             risks, falsifiers, status, created_at, as_of)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             risks, falsifiers, status, created_at, as_of, key_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 thesis.id,
                 thesis.entity_id,
                 thesis.persona_id,
                 thesis.horizon,
-                thesis.statement,
-                json.dumps(thesis.assumptions),
-                json.dumps(thesis.catalysts),
-                json.dumps(thesis.risks),
-                json.dumps(thesis.falsifiers),
+                self._seal_field("thesis", thesis.id, "statement", thesis.statement),
+                self._seal_field(
+                    "thesis", thesis.id, "assumptions", json.dumps(thesis.assumptions)
+                ),
+                self._seal_field(
+                    "thesis", thesis.id, "catalysts", json.dumps(thesis.catalysts)
+                ),
+                self._seal_field("thesis", thesis.id, "risks", json.dumps(thesis.risks)),
+                self._seal_field(
+                    "thesis", thesis.id, "falsifiers", json.dumps(thesis.falsifiers)
+                ),
                 thesis.status.value,
                 thesis.created_at.isoformat(),
                 thesis.as_of.isoformat(),
+                key_id,
             ),
         )
         self._conn.commit()
@@ -222,18 +398,23 @@ class JanusStore:
             ).fetchall()
         return [self._row_to_thesis(row) for row in rows]
 
-    @staticmethod
-    def _row_to_thesis(row: sqlite3.Row) -> Thesis:
+    def _row_to_thesis(self, row: sqlite3.Row) -> Thesis:
+        key_id = row["key_id"]
+        thesis_id = row["id"]
+
+        def unseal(column: str) -> str:
+            return self._unseal_field(key_id, "thesis", thesis_id, column, row[column])
+
         return Thesis(
-            id=row["id"],
+            id=thesis_id,
             entity_id=row["entity_id"],
             persona_id=row["persona_id"],
             horizon=row["horizon"],
-            statement=row["statement"],
-            assumptions=json.loads(row["assumptions"]),
-            catalysts=json.loads(row["catalysts"]),
-            risks=json.loads(row["risks"]),
-            falsifiers=json.loads(row["falsifiers"]),
+            statement=unseal("statement"),
+            assumptions=json.loads(unseal("assumptions")),
+            catalysts=json.loads(unseal("catalysts")),
+            risks=json.loads(unseal("risks")),
+            falsifiers=json.loads(unseal("falsifiers")),
             status=ThesisStatus(row["status"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             as_of=datetime.fromisoformat(row["as_of"]),
@@ -242,18 +423,21 @@ class JanusStore:
     # ------------------------------------------------------------------
     # Predictions and outcomes
     # ------------------------------------------------------------------
-    def insert_prediction(self, prediction: Prediction) -> None:
+    def insert_prediction(
+        self, prediction: Prediction, *, commit: bool = True
+    ) -> None:
+        key_id = self._sealer.active_key_id if self._sealer is not None else None
         self._conn.execute(
             """
             INSERT INTO prediction
             (id, thesis_id, target, horizon, probability, quantiles, model_version,
-             features_hash, created_at, as_of, outcome_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             features_hash, created_at, as_of, outcome_id, key_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 prediction.id,
                 prediction.thesis_id,
-                prediction.target,
+                self._seal_field("prediction", prediction.id, "target", prediction.target),
                 prediction.horizon,
                 prediction.probability,
                 json.dumps(prediction.quantiles, sort_keys=True),
@@ -262,9 +446,11 @@ class JanusStore:
                 prediction.created_at.isoformat(),
                 prediction.as_of.isoformat(),
                 prediction.outcome_id,
+                key_id,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_prediction(self, prediction_id: str) -> Optional[Prediction]:
         row = self._conn.execute(
@@ -289,31 +475,44 @@ class JanusStore:
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_prediction(row) for row in rows]
 
-    def attach_outcome(self, prediction_id: str, outcome_id: str) -> None:
+    def attach_outcome(
+        self, prediction_id: str, outcome_id: str, *, commit: bool = True
+    ) -> None:
         """Attach an outcome. This is the only mutation allowed on a prediction."""
 
         self._conn.execute(
             "UPDATE prediction SET outcome_id = ? WHERE id = ?", (outcome_id, prediction_id)
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def insert_outcome(self, outcome: Outcome) -> None:
+    def insert_outcome(
+        self, outcome: Outcome, *, commit: bool = True
+    ) -> None:
+        key_id = self._sealer.active_key_id if self._sealer is not None else None
         self._conn.execute(
             """
             INSERT INTO outcome
-            (id, prediction_id, realized_value, realized_at, source, score)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (id, prediction_id, realized_value, realized_at, source, score, key_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 outcome.id,
                 outcome.prediction_id,
-                json.dumps(outcome.realized_value, sort_keys=True),
+                self._seal_field(
+                    "outcome",
+                    outcome.id,
+                    "realized_value",
+                    json.dumps(outcome.realized_value, sort_keys=True),
+                ),
                 outcome.realized_at.isoformat(),
                 outcome.source,
                 outcome.score,
+                key_id,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def get_outcome(self, outcome_id: str) -> Optional[Outcome]:
         row = self._conn.execute("SELECT * FROM outcome WHERE id = ?", (outcome_id,)).fetchone()
@@ -339,12 +538,13 @@ class JanusStore:
                 pairs.append((prediction, outcome))
         return pairs
 
-    @staticmethod
-    def _row_to_prediction(row: sqlite3.Row) -> Prediction:
+    def _row_to_prediction(self, row: sqlite3.Row) -> Prediction:
         return Prediction(
             id=row["id"],
             thesis_id=row["thesis_id"],
-            target=row["target"],
+            target=self._unseal_field(
+                row["key_id"], "prediction", row["id"], "target", row["target"]
+            ),
             horizon=row["horizon"],
             probability=row["probability"],
             quantiles=json.loads(row["quantiles"]),
@@ -355,12 +555,15 @@ class JanusStore:
             outcome_id=row["outcome_id"],
         )
 
-    @staticmethod
-    def _row_to_outcome(row: sqlite3.Row) -> Outcome:
+    def _row_to_outcome(self, row: sqlite3.Row) -> Outcome:
         return Outcome(
             id=row["id"],
             prediction_id=row["prediction_id"],
-            realized_value=json.loads(row["realized_value"]),
+            realized_value=json.loads(
+                self._unseal_field(
+                    row["key_id"], "outcome", row["id"], "realized_value", row["realized_value"]
+                )
+            ),
             realized_at=datetime.fromisoformat(row["realized_at"]),
             source=row["source"],
             score=row["score"],
@@ -448,3 +651,12 @@ class JanusStore:
             lessons=row["lessons"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
+
+
+for _method_name, _method in list(vars(JanusStore).items()):
+    if (
+        callable(_method)
+        and not _method_name.startswith("_")
+        and _method_name != "locked"
+    ):
+        setattr(JanusStore, _method_name, _synchronized(_method))

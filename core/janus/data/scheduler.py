@@ -156,8 +156,19 @@ class IngestionScheduler:
                 )
                 continue
             fetched += len(outcome.observations)
-            for observation in outcome.observations:
-                self.store.insert_observation(observation)
+            try:
+                for observation in outcome.observations:
+                    self.store.insert_observation(observation)
+            except Exception as exc:  # noqa: BLE001 - store boundary
+                failed += 1
+                dead_letters += 1
+                self._record_dead_letter(
+                    run_id,
+                    source.name,
+                    entity_id,
+                    f"{type(exc).__name__}: {exc}",
+                )
+                continue
             stored += len(outcome.observations)
         return {
             "fetched": fetched,
@@ -210,8 +221,19 @@ class IngestionScheduler:
                 )
                 continue
             fetched += len(outcome.observations)
-            for observation in outcome.observations:
-                self.store.insert_observation(observation)
+            try:
+                for observation in outcome.observations:
+                    self.store.insert_observation(observation)
+            except Exception as exc:  # noqa: BLE001 - store boundary
+                failed += 1
+                dead_letters += 1
+                self._record_dead_letter(
+                    run_id,
+                    source.name,
+                    entity_id,
+                    f"{type(exc).__name__}: {exc}",
+                )
+                continue
             stored += len(outcome.observations)
         return {
             "fetched": fetched,
@@ -288,8 +310,12 @@ class IngestionScheduler:
             except Exception:
                 failed += 1
                 continue
-            for observation in observations:
-                self.store.insert_observation(observation)
+            try:
+                for observation in observations:
+                    self.store.insert_observation(observation)
+            except Exception:
+                failed += 1
+                continue
             self.store.connection.execute(
                 "UPDATE ingestion_dead_letter SET replayed_at = ? WHERE id = ?",
                 (utcnow().isoformat(), row["id"]),

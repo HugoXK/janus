@@ -36,12 +36,15 @@ def log_loss(
 
 def reliability_curve(
     probabilities: Sequence[float], outcomes: Sequence[float], bins: int = 10
-) -> list[dict[str, float | int]]:
-    """Binned calibration data for a reliability diagram."""
+) -> list[dict[str, float | int | None]]:
+    """Binned calibration data for a reliability diagram.
+
+    Empty bins carry ``None`` rather than NaN so the report is strict JSON.
+    """
 
     p, y = _as_arrays(probabilities, outcomes)
     edges = np.linspace(0.0, 1.0, bins + 1)
-    curve: list[dict[str, float | int]] = []
+    curve: list[dict[str, float | int | None]] = []
     for index in range(bins):
         lower, upper = edges[index], edges[index + 1]
         if index == bins - 1:
@@ -55,8 +58,8 @@ def reliability_curve(
                     "bin_lower": float(lower),
                     "bin_upper": float(upper),
                     "count": 0,
-                    "mean_predicted": float("nan"),
-                    "observed_frequency": float("nan"),
+                    "mean_predicted": None,
+                    "observed_frequency": None,
                 }
             )
             continue
@@ -80,9 +83,12 @@ def expected_calibration_error(
     total = len(p)
     ece = 0.0
     for bucket in curve:
-        count = int(bucket["count"])
-        if count == 0:
+        count = bucket["count"]
+        mean = bucket["mean_predicted"]
+        observed = bucket["observed_frequency"]
+        if not isinstance(count, int) or count == 0:
             continue
-        gap = abs(float(bucket["mean_predicted"]) - float(bucket["observed_frequency"]))
-        ece += (count / total) * gap
+        if not isinstance(mean, (int, float)) or not isinstance(observed, (int, float)):
+            continue
+        ece += (count / total) * abs(float(mean) - float(observed))
     return float(ece)

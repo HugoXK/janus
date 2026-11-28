@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..config import load_settings
-from ..memory.store import JanusStore
+from ..memory.store import JanusStore, open_store
+from .auth import AuthorizationError, Authorizer, authorizer_from_env
 from .service import JanusService
 
 def _server_class() -> Any:
@@ -33,14 +35,65 @@ TOOLS = [
     "janus_forecast_settle",
     "janus_review_debrief",
     "janus_calibrate",
+    "janus_entity_resolve",
+    "janus_entity_show",
+    "janus_entity_list",
+    "janus_security_resolve",
+    "janus_universe_members",
+    "janus_corporate_actions",
+    "janus_adjust_price",
+    "janus_source_spans",
+    "janus_source_citation",
+    "janus_quality",
     "janus_persona_list",
     "janus_beliefbench_run",
+    "janus_provenance_trace",
+    "janus_mcp_approval_list",
+    "janus_mcp_approval_decide",
+    "janus_scenario_tree",
+    "janus_quantile_forecast",
 ]
+
+RESOURCES = [
+    "janus://theses",
+    "janus://forecasts",
+    "janus://calibration",
+    "janus://entities",
+    "janus://market",
+    "janus://sector",
+    "janus://stock",
+    "janus://provenance",
+]
+
+
+def _guarded(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Turn a typed authorization failure into a stable error payload."""
+
+    @functools.wraps(function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(*args, **kwargs)
+        except AuthorizationError as exc:
+            return {"error": exc.to_dict()}
+
+    return wrapper
+
+
+def _guarded_json(function: Callable[..., str]) -> Callable[..., str]:
+    @functools.wraps(function)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        try:
+            return function(*args, **kwargs)
+        except AuthorizationError as exc:
+            return json.dumps({"error": exc.to_dict()}, sort_keys=True)
+
+    return wrapper
 
 
 def build_server(
     store: Optional[JanusStore] = None,
     scenarios_root: Optional[Path] = None,
+    authorizer: Optional[Authorizer] = None,
 ) -> Any:
     """Build the MCP server.
 
@@ -50,20 +103,25 @@ def build_server(
 
     server_class = _server_class()
 
+    janus_store = store or open_store(load_settings().database)
     service = JanusService(
-        store or JanusStore(load_settings().database),
+        janus_store,
         scenarios_root=scenarios_root or Path.cwd(),
+        authorizer=authorizer or authorizer_from_env(janus_store),
     )
     server = server_class("janus")
 
     @server.tool()
-    def janus_version() -> str:
+    @_guarded
+    def janus_version() -> Any:
         """Return the Janus version."""
         from janus import __version__
 
+        service.require_read("janus_version")
         return __version__
 
     @server.tool()
+    @_guarded
     def janus_as_of_query(
         entity_id: str,
         as_of: str,
@@ -83,6 +141,7 @@ def build_server(
         )
 
     @server.tool()
+    @_guarded
     def janus_thesis_create(
         entity_id: str,
         statement: str,
@@ -102,11 +161,13 @@ def build_server(
         )
 
     @server.tool()
+    @_guarded
     def janus_thesis_list() -> list[dict[str, Any]]:
         """List theses."""
         return service.list_theses()
 
     @server.tool()
+    @_guarded
     def janus_forecast_create(
         thesis_id: str,
         target: str,
@@ -128,11 +189,13 @@ def build_server(
         )
 
     @server.tool()
+    @_guarded
     def janus_forecast_list(thesis_id: Optional[str] = None) -> list[dict[str, Any]]:
         """List forecasts, optionally for one thesis."""
         return service.list_forecasts(thesis_id=thesis_id)
 
     @server.tool()
+    @_guarded
     def janus_forecast_settle(
         prediction_id: str,
         start_price: float,
@@ -150,6 +213,7 @@ def build_server(
         )
 
     @server.tool()
+    @_guarded
     def janus_review_debrief(
         prediction_id: str,
         features: dict[str, float],
@@ -167,36 +231,177 @@ def build_server(
         )
 
     @server.tool()
+    @_guarded
     def janus_calibrate() -> dict[str, Any]:
         """Calibration report over settled predictions."""
         return service.calibrate()
 
     @server.tool()
+    @_guarded
+    def janus_entity_resolve(alias: str) -> dict[str, Any]:
+        """Resolve a ticker, CIK, or name alias to one entity."""
+        return service.resolve_entity(alias)
+
+    @server.tool()
+    @_guarded
+    def janus_entity_show(entity_id: str) -> dict[str, Any]:
+        """Show an entity with all aliases."""
+        return service.get_entity(entity_id)
+
+    @server.tool()
+    @_guarded
+    def janus_entity_list(limit: int = 200) -> list[dict[str, Any]]:
+        """List entities in the graph."""
+        return service.list_entities(limit)
+
+    @server.tool()
+    @_guarded
     def janus_persona_list() -> list[dict[str, Any]]:
         """List stored personas and their weights."""
         return service.list_personas()
 
     @server.tool()
+    @_guarded
     def janus_beliefbench_run(
         scenarios_path: str, baseline: str = "always_up"
     ) -> dict[str, Any]:
         """Run a baseline over a BeliefBench scenario file."""
         return service.beliefbench(scenarios_path, baseline)
 
+    @server.tool()
+    @_guarded
+    def janus_provenance_trace(observation_id: str) -> dict[str, Any]:
+        """Resolve an observation to its citation and source span."""
+        return service.provenance_trace(observation_id)
+
+    @server.resource("janus://provenance")
+    @_guarded_json
+    def provenance_resource() -> str:
+        return json.dumps(service.provenance_catalog(), default=str)
+
+    @server.tool()
+    @_guarded
+    def janus_scenario_tree(
+        entity_id: str,
+        horizon: str,
+        as_of: str,
+        direction_probability: float,
+        volatility: float = 0.02,
+        trend: float = 0.0,
+        evidence: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Generate a scenario tree whose probabilities sum to one."""
+        return service.scenario_tree(
+            entity_id=entity_id,
+            horizon=horizon,
+            as_of=as_of,
+            direction_probability=direction_probability,
+            volatility=volatility,
+            trend=trend,
+            evidence=evidence,
+        )
+
+    @server.tool()
+    @_guarded
+    def janus_quantile_forecast(
+        returns: list[float], horizon: int = 1
+    ) -> dict[str, Any]:
+        """Return empirical 10/50/90 return quantiles and interval width."""
+        return service.quantile_forecast(returns, horizon=horizon)
+
+    @server.tool()
+    def janus_security_resolve(
+        symbol: str, as_of: str, exchange: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Resolve a symbol to its security master row at an as-of time."""
+        return service.security_resolve(symbol, as_of, exchange=exchange)
+
+    @server.tool()
+    @_guarded
+    def janus_universe_members(universe: str, as_of: str) -> list[dict[str, Any]]:
+        """Return the point-in-time members of a universe."""
+        return service.universe_members(universe, as_of)
+
+    @server.tool()
+    @_guarded
+    def janus_corporate_actions(
+        security_id: Optional[str] = None, as_of: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """List corporate actions, optionally bounded by security and as-of."""
+        return service.corporate_actions(security_id, as_of)
+
+    @server.tool()
+    @_guarded
+    def janus_adjust_price(
+        security_id: str, raw_price: float, as_of: str
+    ) -> dict[str, Any]:
+        """Return a split-adjusted price with an explicit adjustment basis."""
+        return service.adjust_price(security_id, raw_price, as_of)
+
+    @server.tool()
+    @_guarded
+    def janus_source_spans(observation_id: str) -> list[dict[str, Any]]:
+        """List exact source spans attached to one observation."""
+        return service.source_spans(observation_id)
+
+    @server.tool()
+    @_guarded
+    def janus_source_citation(
+        observation_id: str, span_id: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Return a citation with the source span, locator, and excerpt."""
+        return service.source_citation(observation_id, span_id)
+
+    @server.tool()
+    @_guarded
+    def janus_mcp_approval_list(as_of: Optional[str] = None) -> Any:
+        """List write approvals, optionally as of a point in time (admin scope)."""
+        return service.list_approvals(as_of)
+
+    @server.tool()
+    @_guarded
+    def janus_mcp_approval_decide(approval_id: str, decision: str) -> Any:
+        """Approve or deny a pending write approval (admin scope)."""
+        return service.decide_approval(approval_id, decision)
+
+    @server.tool()
+    @_guarded
+    def janus_quality(
+        entity_id: str, as_of: str, limit: int = 500, max_age_days: int = 7
+    ) -> dict[str, Any]:
+        """Run data-quality checks over one entity's newest as-of observations."""
+        return service.quality_report(
+            entity_id, as_of, limit=limit, max_age_days=max_age_days
+        )
+
+    @server.resource("janus://entities")
+    @_guarded_json
+    def entities_resource() -> str:
+        service.require_resource("janus://entities")
+        return json.dumps(service.list_entities(), default=str)
+
     @server.resource("janus://theses")
+    @_guarded_json
     def theses_resource() -> str:
+        service.require_resource("janus://theses")
         return json.dumps(service.list_theses(), default=str)
 
     @server.resource("janus://forecasts")
+    @_guarded_json
     def forecasts_resource() -> str:
+        service.require_resource("janus://forecasts")
         return json.dumps(service.list_forecasts(), default=str)
 
     @server.resource("janus://calibration")
+    @_guarded_json
     def calibration_resource() -> str:
+        service.require_resource("janus://calibration")
         return json.dumps(service.calibrate(), default=str)
 
     @server.resource("janus://market")
+    @_guarded_json
     def market_resource() -> str:
+        service.require_resource("janus://market")
         return json.dumps(
             {
                 "status": "not_materialized",
@@ -206,7 +411,9 @@ def build_server(
         )
 
     @server.resource("janus://sector")
+    @_guarded_json
     def sector_resource() -> str:
+        service.require_resource("janus://sector")
         return json.dumps(
             {
                 "status": "not_materialized",
@@ -216,7 +423,9 @@ def build_server(
         )
 
     @server.resource("janus://stock")
+    @_guarded_json
     def stock_resource() -> str:
+        service.require_resource("janus://stock")
         return json.dumps(
             {
                 "status": "not_materialized",
