@@ -316,6 +316,21 @@ class JanusService:
         self.require_read("janus_calibrate")
         return asdict(CalibrationService.from_store(self.store))
 
+    def provenance_trace(self, observation_id: str) -> dict[str, Any]:
+        self.require_read("janus_provenance_trace")
+        from ..memory.provenance import ProvenanceTracer
+
+        return ProvenanceTracer(self.store).require(observation_id).to_dict()
+
+    def provenance_catalog(self, limit: int = 200) -> list[dict[str, Any]]:
+        self.require_resource("janus://provenance")
+        from ..memory.provenance import ProvenanceTracer
+
+        return [
+            provenance.to_dict()
+            for provenance in ProvenanceTracer(self.store).catalog(limit)
+        ]
+
     def security_resolve(
         self, symbol: str, as_of: str | datetime, *, exchange: Optional[str] = None
     ) -> dict[str, Any]:
