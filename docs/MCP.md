@@ -31,6 +31,7 @@ The default store is the configured SQLite database. Tests inject
 | `janus_beliefbench_run` | Run a baseline over a scenario file |
 | `janus_counterfactual_replay` | Replay a prediction with swapped evidence or persona |
 | `janus_persona_tournament` | Compare all personas on one fixed scenario set |
+| `janus_provenance_trace` | Resolve an observation to its citation and raw source |
 | `janus_corporate_actions` | List corporate actions, bounded by security and as-of |
 | `janus_adjust_price` | Split-adjusted price with an explicit basis |
 | `janus_source_spans` | Source spans attached to one observation |
@@ -47,6 +48,7 @@ The default store is the configured SQLite database. Tests inject
 | `janus://theses` | All theses |
 | `janus://forecasts` | All forecasts |
 | `janus://calibration` | Calibration report |
+| `janus://provenance` | Citation catalog for known observations |
 | `janus://market` | Market dashboard placeholder (`not_materialized`) |
 | `janus://sector` | Sector dashboard placeholder (`not_materialized`) |
 | `janus://stock` | Stock dashboard placeholder (`not_materialized`) |

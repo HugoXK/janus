@@ -45,6 +45,7 @@ TOOLS = [
     "janus_beliefbench_run",
     "janus_counterfactual_replay",
     "janus_persona_tournament",
+    "janus_provenance_trace",
     "janus_mcp_approval_list",
     "janus_mcp_approval_decide",
     "janus_scenario_tree",
@@ -58,6 +59,7 @@ RESOURCES = [
     "janus://market",
     "janus://sector",
     "janus://stock",
+    "janus://provenance",
 ]
 
 
@@ -247,6 +249,7 @@ def build_server(
 
     @server.tool()
     @_guarded
+    @_guarded
     def janus_counterfactual_replay(
         prediction_id: str,
         remove_evidence: Optional[list[str]] = None,
@@ -276,6 +279,17 @@ def build_server(
             bootstrap=bootstrap,
             confidence=confidence,
         )
+
+    @server.tool()
+    @_guarded
+    def janus_provenance_trace(observation_id: str) -> dict[str, Any]:
+        """Resolve an observation to its citation and source span."""
+        return service.provenance_trace(observation_id)
+
+    @server.resource("janus://provenance")
+    @_guarded_json
+    def provenance_resource() -> str:
+        return json.dumps(service.provenance_catalog(), default=str)
 
     @server.tool()
     @_guarded
