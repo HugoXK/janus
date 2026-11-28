@@ -712,8 +712,7 @@ def entity_resolve(
 ) -> None:
     """Resolve an alias to one entity."""
 
-    settings = load_settings()
-    entity = EntityGraph(JanusStore(db or settings.database)).resolve(alias)
+    entity = EntityGraph(_open_store(db)).resolve(alias)
     if entity is None:
         typer.echo(f"entity not found: {alias}", err=True)
         raise typer.Exit(code=1)
@@ -734,8 +733,7 @@ def entity_show(
 ) -> None:
     """Show an entity and its aliases."""
 
-    settings = load_settings()
-    graph = EntityGraph(JanusStore(db or settings.database))
+    graph = EntityGraph(_open_store(db))
     entity = graph.get(entity_id)
     if entity is None:
         typer.echo(f"entity not found: {entity_id}", err=True)
@@ -760,9 +758,8 @@ def entity_list(
 ) -> None:
     """List entities in the graph."""
 
-    settings = load_settings()
     try:
-        entities = EntityGraph(JanusStore(db or settings.database)).list(limit)
+        entities = EntityGraph(_open_store(db)).list(limit)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     payload = [entity.to_dict() for entity in entities]
