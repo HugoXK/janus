@@ -142,6 +142,22 @@ SHA-256 hashes, lineage, and a content hash. `verify_snapshot` detects tampering
 or missing files before `import_snapshot` writes into a fresh store. The CLI
 exposes `janus archive export/verify/import`.
 
+## Retention and redaction
+
+`core/janus/memory/retention.py` applies source/kind retention windows and
+deletes only observations whose expiration is at or before `as_of`; a dry run
+reports the same counts without writing and sets `dry_run` on the result.
+Rules are evaluated in order and the **first match wins**, so a broad rule
+(`*:*:365`) placed first shadows every specific rule after it. `redact_value`
+masks named fields at any depth — top-level columns as well as nested keys in
+`value` — and `export_redacted` writes JSONL without mutating stored facts. The
+CLI exposes `janus retention apply` and `janus retention export`; both reject a
+naive `--as-of` so a destructive cutoff cannot silently use the host time zone.
+
+Retention deletes observation rows but leaves their content-addressed blobs on
+disk. Run `janus blob gc` afterwards when the raw documents were meant to age
+out as well.
+
 ## As-of semantics
 
 There are two questions, and two modes:
